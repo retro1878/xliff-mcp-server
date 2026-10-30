@@ -212,6 +212,18 @@ Executed `.\.venv\Scripts\pytest -v` (**93 passed, 1 warning**), `.\.venv\Script
 | **15** | Escaped literal tag syntax in `<source>` (`&lt;x id="1"/&gt;`) round-trips into real markup | **Covered** | `_render_fragment(text, allowed=_source_tag_set(unit_content))` (`xliff_processor.py:452-454, 702-757`) only preserves inline tags present in the unit's own `<source>`, escaping any literal or hallucinated tags back to `&lt;...&gt;`. |
 | **16** | `skipped_count` conflates four distinct skip reasons | **Covered** | `replace_xliff_targets_detailed` (`xliff_processor.py:380-484`) and the MCP tool `replace_xliff_targets` (`tool_registry.py:166-192`) now return `skipped_units: [{"unit_id", "seg_number", "reason"}]` with distinct `reason` codes (`"empty_translation"`, `"duplicate_target"`, `"unit_not_found"`, `"tags_mismatch"`). |
 
+---
+
+## 7. Round 4 Re-Verification — Final Sign-Off (`HEAD` at `797e67e`)
+
+Re-ran `.\.venv\Scripts\pytest -v` (**96 passed, 1 warning**), `.\.venv\Scripts\ruff check .` (**All checks passed!**), `.\.venv\Scripts\ruff format --check` on all 5 added test files (**5 files already formatted**), and the Round 3/4 probe script against `797e67e`:
+
+- **Finding #13 (`<alt-trans>` and self-closing `<source/>` in `diff_report`) — Covered:** `_units_in_order` (`xliff_mcp/xliff_processor.py:802-814`) and `diff_report` (`:627`) now use `_source_element` and `_source_fragment` (`:926-941`), which split at `<alt-trans>` and handle self-closing `<source/>`. Filling a unit with `<source/>` before `<alt-trans>` now produces `diff_report.issues == []`.
+- **Finding #14 (Reordered placeholders in `diff_report`) — Covered:** `diff_report` (`xliff_mcp/xliff_processor.py:627-637`) now compares `Counter(source_tags) != Counter(target_tags)`, matching `_tags_match_source` (`:949-958`) while still flagging shape changes (such as paired `<g>` turned into self-closing `<g/>` or dropped `ctype`).
+
+All 16 findings across all review rounds are now fully covered.
+
+
 
 
 

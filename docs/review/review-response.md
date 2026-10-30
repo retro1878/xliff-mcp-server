@@ -16,7 +16,7 @@ All twelve findings are closed. No code finding is open; the remaining items are
 | Real export round trip | still byte-identical, md5 `580dc6f6ff35f495ae44fa33e751edfe` |
 | Deliberately unchanged | `auth.py` (rate-limit dictionary, unkeyed bypass, dead helpers), pre-existing unformatted files |
 | Known limits | state-only edits with unchanged text are not reported by `diff_report`; duplicate unit ids are identified by id and position only |
-| Reviewer sign-off | `review-findings.md` §4 (Argon, `f1002c3`): all 12 findings covered |
+| Reviewer sign-off | `review-findings.md` §4 (Argon, `f1002c3`): all 12 findings of the original review covered; §7 (Argon, `797e67e`): all 16 findings across every round covered |
 
 | # | Finding | Verdict | Where |
 | --- | --- | --- | --- |
