@@ -202,3 +202,45 @@ state="translated" count: 12 | needs-translation: 171
 - No run against Smartcat itself.
 - `xliff_mcp/xliff_processor.py` was deliberately not passed through `ruff format` (pre-existing unformatted file; see changelog).
 - Nothing tested on Python 3.10–3.13; only 3.14.7.
+
+## Step 4 (2026-10-30) — diff report
+
+### Commands and results
+
+```
+.venv/Scripts/python -m pytest -q
+48 passed, 1 warning in 3.62s
+
+.venv/Scripts/ruff check .
+All checks passed!
+```
+
+The smoke script CI runs (`python test_server.py`) was run locally. On a Windows console with cp1252 output it fails while printing its own `✓`/`❌` glyphs (`UnicodeEncodeError: 'charmap' codec`), which is a console-encoding issue in the script, not a code failure. With UTF-8 output it completes:
+
+```
+PYTHONIOENCODING=utf-8 .venv/Scripts/python test_server.py
+...
+All tests completed successfully! ✓
+```
+
+### Full-file fill of the Smartcat fixture
+
+`/tmp/fullfill.py` fills every empty segment by reusing the source's inline tags and replacing text runs with Arabic text, then asks for the report:
+
+```
+segments to fill: 178
+replacements: 178
+{"original_unit_count": 183, "filled_unit_count": 183, "counts_match": true}
+changed: 178 | issues: 0
+validate: (True, 'XLIFF format is valid', 183)
+translated targets: 183 | needs-translation: 0
+outside-target identical: True
+```
+
+This is a structural fill with placeholder Arabic, not a translation-quality test.
+
+### Not run in Step 4
+
+- No human-quality translation of the Smartcat file; the 178 filled segments above are placeholder text.
+- No re-import into Smartcat (owner's acceptance step).
+- The report was not tested against a document with duplicate `id` values across several `<file>` elements (Q7).

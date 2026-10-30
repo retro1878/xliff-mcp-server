@@ -23,7 +23,7 @@
       "title": "Rebuild XLIFF Targets From Translation Results",
       "file": "skills/replace_xliff_targets_from_translations.md",
       "summary": "Merge approved translations back into the original XLIFF.",
-      "recommended_mcp_tools": ["replace_xliff_targets"],
+      "recommended_mcp_tools": ["replace_xliff_targets", "diff_xliff_report"],
       "runtime_prompt": "replace_xliff_targets_from_translations"
     },
     {

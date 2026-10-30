@@ -22,6 +22,7 @@ class RegisteredTools:
     process_xliff_with_tags: Callable[..., str]
     validate_xliff: Callable[..., str]
     replace_xliff_targets: Callable[..., str]
+    diff_xliff_report: Callable[..., str]
     process_tmx: Callable[..., str]
     validate_tmx: Callable[..., str]
     export_xliff_file: Callable[..., str]
@@ -155,6 +156,7 @@ def register_tools(
                 "message": f"Successfully replaced {replacements_count} translations",
                 "content": updated_content,
                 "replacements_count": replacements_count,
+                "diff_report": xliff_service.diff_report(content, updated_content),
             })
         except json.JSONDecodeError as error:
             return _dump_json({
@@ -170,6 +172,29 @@ def register_tools(
                 "message": _tool_error_message("Error replacing targets", error),
                 "content": content,
                 "replacements_count": 0,
+            })
+
+    @mcp.tool()
+    def diff_xliff_report(original_content: str, filled_content: str, api_key: Optional[str] = None) -> str:
+        auth_error = require_auth(api_key)
+        if auth_error is not None:
+            return auth_failure_response(auth_error["reason"])
+
+        try:
+            report = xliff_service.diff_report(original_content, filled_content)
+            return _dump_json({
+                "success": True,
+                "message": (
+                    f"{len(report['changed_units'])} units changed, "
+                    f"{len(report['issues'])} issues"
+                ),
+                **report,
+            })
+        except Exception as error:
+            logger.error("Failed to build XLIFF diff report: %s", error)
+            return _dump_json({
+                "success": False,
+                "message": _tool_error_message("Error building diff report", error),
             })
 
     @mcp.tool()
@@ -306,6 +331,7 @@ def register_tools(
                 "process_xliff_with_tags",
                 "validate_xliff",
                 "replace_xliff_targets",
+                "diff_xliff_report",
                 "process_tmx",
                 "validate_tmx",
                 "export_xliff_file",
@@ -330,6 +356,7 @@ def register_tools(
         process_xliff_with_tags=process_xliff_with_tags,
         validate_xliff=validate_xliff,
         replace_xliff_targets=replace_xliff_targets,
+        diff_xliff_report=diff_xliff_report,
         process_tmx=process_tmx,
         validate_tmx=validate_tmx,
         export_xliff_file=export_xliff_file,

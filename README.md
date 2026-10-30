@@ -106,7 +106,16 @@ Replace target translations in XLIFF file.
 - `content` (string): Original XLIFF file content
 - `translations` (string): JSON array of translations with segNumber/unitId and aiResult/mtResult
 
-**Returns:** JSON with updated XLIFF content and replacement count
+**Returns:** JSON with updated XLIFF content, replacement count, and a `diff_report` (see `diff_xliff_report`).
+
+### diff_xliff_report
+Compare an original and a filled XLIFF document and report every unit whose target changed, plus any difference in unit count, unit ids, source bytes, unit attributes, target state or inline tags.
+
+**Parameters:**
+- `original_content` (string): XLIFF content before replacement
+- `filled_content` (string): XLIFF content after replacement
+
+**Returns:** JSON with `original_unit_count`, `filled_unit_count`, `counts_match`, `changed_units` (ids), and `issues` (list of `{unit_id, kind, detail}` where kind is one of `count`, `ids`, `source`, `attributes`, `state`, `tags`, `target`).
 
 ### process_tmx
 Process TMX content and extract translation units.

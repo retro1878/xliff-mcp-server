@@ -324,6 +324,105 @@ class XliffProcessorService:
         updated_content = UNIT_ELEMENT.sub(rewrite, content)
         return updated_content, replacements_count
 
+    @staticmethod
+    def diff_report(original: str, filled: str) -> dict:
+        """Compare an original and a filled document.
+
+        Reports every unit whose target text changed, and every place where
+        unit ids, unit count, source bytes, unit attributes, target state or
+        inline tags differ. It never modifies anything and never raises on
+        malformed input; it reports what it can see.
+
+        Returns:
+            dict with original_unit_count, filled_unit_count, counts_match,
+            changed_units (ids), issues (list of {unit_id, kind, detail}).
+        """
+        original_units = _units_by_id(original)
+        filled_units = _units_by_id(filled)
+        issues: list[dict] = []
+
+        if len(original_units) != len(filled_units):
+            issues.append(
+                {
+                    "unit_id": None,
+                    "kind": "count",
+                    "detail": (
+                        f"{len(original_units)} units before, "
+                        f"{len(filled_units)} after"
+                    ),
+                }
+            )
+
+        for unit_id in original_units:
+            if unit_id not in filled_units:
+                issues.append(
+                    {"unit_id": unit_id, "kind": "ids", "detail": "unit missing from filled file"}
+                )
+        for unit_id in filled_units:
+            if unit_id not in original_units:
+                issues.append(
+                    {"unit_id": unit_id, "kind": "ids", "detail": "unit not present in original"}
+                )
+
+        changed: list[str] = []
+        for unit_id, (before, after) in (
+            (uid, (original_units[uid], filled_units[uid]))
+            for uid in original_units
+            if uid in filled_units
+        ):
+            if before["start_tag"] != after["start_tag"]:
+                issues.append(
+                    {
+                        "unit_id": unit_id,
+                        "kind": "attributes",
+                        "detail": "trans-unit attributes changed",
+                    }
+                )
+            if before["source"] != after["source"]:
+                issues.append(
+                    {"unit_id": unit_id, "kind": "source", "detail": "source element changed"}
+                )
+
+            old_target = _target_parts(before["content"])
+            new_target = _target_parts(after["content"])
+            if old_target is None and new_target is None:
+                continue
+            if new_target is None:
+                issues.append(
+                    {"unit_id": unit_id, "kind": "target", "detail": "target element removed"}
+                )
+                continue
+            if old_target is not None and old_target["inner"] == new_target["inner"]:
+                continue
+
+            changed.append(unit_id)
+            if new_target["state"] != "translated":
+                issues.append(
+                    {
+                        "unit_id": unit_id,
+                        "kind": "state",
+                        "detail": f"filled target state is {new_target['state']!r}",
+                    }
+                )
+            source_tags = _tag_skeleton(before["source"])
+            target_tags = _tag_skeleton(new_target["inner"])
+            if source_tags != target_tags:
+                issues.append(
+                    {
+                        "unit_id": unit_id,
+                        "kind": "tags",
+                        "detail": f"source {source_tags} != target {target_tags}",
+                    }
+                )
+
+        return {
+            "original_unit_count": len(original_units),
+            "filled_unit_count": len(filled_units),
+            "counts_match": len(original_units) == len(filled_units),
+            "changed_units": changed,
+            "issues": issues,
+        }
+
 
 def _unit_id(unit_start_tag: str) -> str | None:
     match = re.search(r"""\bid\s*=\s*["']([^"']+)["']""", unit_start_tag)
@@ -408,3 +507,52 @@ def _render_fragment(text: str) -> str:
         position = tag.end()
     parts.append(escape(text[position:]))
     return "".join(parts)
+
+
+SOURCE_ELEMENT = re.compile(r"<source\b[^>]*>[\s\S]*?</source>", re.IGNORECASE)
+
+
+def _units_by_id(xml: str) -> dict[str, dict]:
+    """unit id -> {start_tag, content, source}. Duplicate ids: last wins."""
+    units: dict[str, dict] = {}
+    for match in UNIT_ELEMENT.finditer(xml):
+        unit_id = _unit_id(match.group(1))
+        if unit_id is None:
+            continue
+        source = SOURCE_ELEMENT.search(match.group(2))
+        units[unit_id] = {
+            "start_tag": match.group(1),
+            "content": match.group(2),
+            "source": source.group(0) if source else "",
+        }
+    return units
+
+
+def _target_parts(unit_content: str) -> dict | None:
+    match = TARGET_ELEMENT.search(unit_content)
+    if not match:
+        return None
+    element = match.group(0)
+    if element.endswith("/>"):
+        return {"open": element[:-2] + ">", "inner": "", "state": _state_of(element)}
+    open_end = element.index(">")
+    open_tag = element[: open_end + 1]
+    inner = re.sub(r"</target>\s*$", "", element[open_end + 1 :], flags=re.IGNORECASE)
+    return {"open": open_tag, "inner": inner, "state": _state_of(open_tag)}
+
+
+def _state_of(tag: str) -> str | None:
+    match = re.search(r"""\bstate\s*=\s*["']([^"']*)["']""", tag)
+    return match.group(1) if match else None
+
+
+def _tag_skeleton(fragment: str) -> list[str]:
+    """'localname:id' for each opening or self-closing inline tag, in order."""
+    skeleton: list[str] = []
+    for closing, name, attrs, _ in INLINE_TAG.findall(fragment):
+        local = name.split(":")[-1]
+        if closing or local not in INLINE_ELEMENTS:
+            continue
+        id_match = re.search(r"""\bid\s*=\s*["']([^"']*)["']""", attrs)
+        skeleton.append(f"{local}:{id_match.group(1) if id_match else ''}")
+    return skeleton

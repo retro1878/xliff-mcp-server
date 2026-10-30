@@ -46,6 +46,7 @@ process_xliff = registered_tools.process_xliff
 process_xliff_with_tags = registered_tools.process_xliff_with_tags
 validate_xliff = registered_tools.validate_xliff
 replace_xliff_targets = registered_tools.replace_xliff_targets
+diff_xliff_report = registered_tools.diff_xliff_report
 process_tmx = registered_tools.process_tmx
 validate_tmx = registered_tools.validate_tmx
 export_xliff_file = registered_tools.export_xliff_file

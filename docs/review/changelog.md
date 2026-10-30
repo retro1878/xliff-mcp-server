@@ -55,3 +55,14 @@ All four changes are in `xliff_mcp/xliff_processor.py`; `tests/test_fill_invaria
 - **Result**: `37 passed` (was `10 failed, 27 passed`).
 - **Not changed**: `validate_xliff` semantics, SDLXLIFF handling (out of scope), `pyproject.toml`.
 - **Formatting**: the new test file was run through `ruff format`. `xliff_mcp/xliff_processor.py` was **not** whole-file reformatted — `git show HEAD:xliff_mcp/xliff_processor.py | ruff format --check` already fails at HEAD, so formatting it here would rewrite ~200 unrelated lines and bury the fix. `ruff check .` passes.
+
+## Step 4 — diff report
+
+### 2026-10-30 — report every replacement run
+
+- **Files changed**: `xliff_mcp/xliff_processor.py` (new `XliffProcessorService.diff_report` plus `_units_by_id`, `_target_parts`, `_state_of`, `_tag_skeleton`), `xliff_mcp/tool_registry.py` (new `diff_xliff_report` tool, report embedded in the `replace_xliff_targets` response, `get_server_info` list), `xliff_mcp/server.py` and `xliff_mcp/http_server.py` (export the callable), `README.md` (tool contract), `skills/replace_xliff_targets_from_translations.md`, `skills/catalog.json`, `tests/test_diff_report.py` (11 new tests).
+- **Why**: the task asks for a diff report after every replacement run that flags any segment where tags, IDs or counts differ.
+- **How**: `diff_report(original, filled)` reuses the same unit/target/inline-tag regexes as the fill path, so it reports on exactly what the writer touched. It reports `changed_units` (ids whose target text differs) and `issues`, each with `unit_id`, `kind` and `detail`. Kinds: `count`, `ids`, `source`, `attributes`, `state`, `tags`, `target`. It never raises on malformed input — a document that no longer parses is still compared textually.
+- **Automatic**: `replace_xliff_targets` now includes `diff_report` in its JSON response, so the report runs on every replacement without a second call. The standalone tool exists for files filled elsewhere.
+- **Contract change**: additive only. `replace_xliff_targets` keeps `content` and `replacements_count`; the response gains one key.
+- **Not done**: the report does not verify XLIFF 1.2 schema order and does not check bidi control characters.
