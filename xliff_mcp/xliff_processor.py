@@ -7,6 +7,7 @@ import logging
 import re
 import threading
 from collections import Counter
+from difflib import SequenceMatcher
 from functools import lru_cache
 from importlib import resources
 from xml.sax.saxutils import escape
@@ -176,61 +177,90 @@ class XliffProcessorService:
                 "ignored_extensions": [],
             }
 
+        if tree.getroot().tag != f"{{{XLIFF_NAMESPACE}}}xliff":
+            return {
+                "valid": False,
+                "errors": [f"root element is {tree.getroot().tag!r}, not an XLIFF 1.2 <xliff>"],
+                "error_count": 1,
+                "ignored_extensions": [],
+            }
+
         ignored = _strip_extensions(tree)
+        ignored_entries = [
+            {"name": name, "count": count} for name, count in sorted(ignored.items())
+        ]
         schema = _xliff_schema()
-        with _SCHEMA_LOCK:
-            valid = schema.validate(tree)
-            errors = [f"line {e.line}: {e.message}" for e in schema.error_log]
+        try:
+            with _SCHEMA_LOCK:
+                valid = schema.validate(tree)
+                errors = [f"line {e.line}: {e.message}" for e in schema.error_log]
+        except etree.XMLSchemaValidateError as error:
+            # e.g. an unresolved entity reference left in the tree.
+            return {
+                "valid": False,
+                "errors": [f"schema validation failed: {error}"],
+                "error_count": 1,
+                "ignored_extensions": ignored_entries,
+            }
 
         return {
             "valid": valid,
             "errors": errors[:20],
             "error_count": len(errors),
-            "ignored_extensions": [
-                {"name": name, "count": count} for name, count in sorted(ignored.items())
-            ],
+            "ignored_extensions": ignored_entries,
         }
 
     @staticmethod
     def process_xliff_with_tags(file_name: str, content: str) -> List[XliffData]:
         """
         Process XLIFF preserving internal tags for AI translation
-        
+
         Args:
             file_name: File name
             content: XLIFF file content
-            
+
         Returns:
             List of XliffData objects with preserved tags
         """
         try:
             store = xliff.xlifffile()
             store.parse(content.encode('utf-8'))
-            
+
+            # Raw unit bodies in document order: the i-th non-header unit in the
+            # store is the i-th <trans-unit> here, which is what keeps repeated
+            # ids across <file> elements unambiguous.
+            raw_units = [match.group(2) for match in UNIT_ELEMENT.finditer(content)]
+            languages = _languages_in_unit_order(content)
+
             data = []
             unit_index = 0
-            
+            raw_index = -1
+
             for unit in store.units:
                 if unit.isheader():
                     continue
-                
+
+                raw_index += 1
+                if raw_index >= len(raw_units):
+                    break
+
+                unit_index += 1
+
                 unit_full_id = unit.getid()
                 if not unit_full_id:
                     continue
-                
+
                 if '\x04' in unit_full_id:
                     unit_id = unit_full_id.split('\x04')[-1]
                 else:
                     unit_id = unit_full_id
-                
-                unit_index += 1
-                
+
                 percent = -1
                 if hasattr(unit, 'xmlelement'):
                     element = unit.xmlelement
                     percent_value = (
-                        element.get('percent') or 
-                        element.get('mq:percent') or 
+                        element.get('percent') or
+                        element.get('mq:percent') or
                         element.get('{urn:oasis:names:tc:xliff:document:2.0}percent') or
                         element.get('{urn:oasis:names:tc:xliff:document:1.2}percent')
                     )
@@ -239,30 +269,36 @@ class XliffProcessorService:
                             percent = float(percent_value)
                         except ValueError:
                             percent = -1
-                
-                # Extract content using regex to preserve tags
-                source = XliffProcessorService._extract_element_content(content, 'source', unit_id)
-                target = XliffProcessorService._extract_element_content(content, 'target', unit_id)
-                
+
+                # Extract from this unit's own body, never by searching the id.
+                raw_unit = raw_units[raw_index]
+                source = XliffProcessorService._extract_element_content(raw_unit, 'source')
+                target = XliffProcessorService._extract_element_content(raw_unit, 'target')
+
                 if not source:
                     source = unit.source or ""
                 if not target:
                     target = unit.target or ""
-                
+
                 src_lang = ""
                 tgt_lang = ""
                 if hasattr(unit, 'xmlelement'):
                     element = unit.xmlelement
                     src_lang = (element.get('source-language') or "").lower()
                     tgt_lang = (element.get('target-language') or "").lower()
-                
+
                 if not src_lang or not tgt_lang:
-                    file_src_lang, file_tgt_lang = XliffProcessorService._get_file_languages(content)
+                    if raw_index < len(languages):
+                        file_src_lang, file_tgt_lang = languages[raw_index]
+                    else:
+                        file_src_lang, file_tgt_lang = (
+                            XliffProcessorService._get_file_languages(content)
+                        )
                     if not src_lang:
                         src_lang = file_src_lang
                     if not tgt_lang:
                         tgt_lang = file_tgt_lang
-                
+
                 xliff_data = XliffData(
                     fileName=file_name,
                     segNumber=unit_index,
@@ -273,27 +309,19 @@ class XliffProcessorService:
                     srcLang=src_lang,
                     tgtLang=tgt_lang
                 )
-                
+
                 data.append(xliff_data)
-            
+
             return data
-            
+
         except Exception as e:
             logger.error(f"Failed to process XLIFF with tags: {str(e)}")
             raise
-    
-    @staticmethod
-    def _extract_element_content(xml_content: str, element_name: str, unit_id: str) -> str:
-        """Extract element content from raw XML preserving format"""
-        try:
-            unit_pattern = rf'<(?:trans-unit|unit)[^>]*id=["\']{re.escape(unit_id)}["\'][^>]*>([\s\S]*?)</(?:trans-unit|unit)>'
-            
-            unit_match = re.search(unit_pattern, xml_content, re.IGNORECASE)
-            if not unit_match:
-                return ""
-            
-            unit_content = unit_match.group(1)
 
+    @staticmethod
+    def _extract_element_content(unit_content: str, element_name: str) -> str:
+        """Extract an element's inner XML from one trans-unit body."""
+        try:
             element_pattern = rf'(<{element_name}[^>]*>)([\s\S]*?)</{element_name}>'
 
             element_match = re.search(element_pattern, unit_content, re.IGNORECASE)
@@ -309,7 +337,7 @@ class XliffProcessorService:
         except Exception as e:
             logger.error(f"Failed to extract {element_name} content: {str(e)}")
             return ""
-    
+
     @staticmethod
     def _get_file_languages(xml_content: str) -> Tuple[str, str]:
         """Get language info from file level"""
@@ -351,13 +379,17 @@ class XliffProcessorService:
                 continue
             unit_id = translation.get('unitId')
             seg_number = translation.get('segNumber')
-            if unit_id:
-                wanted_by_id.setdefault(str(unit_id), []).append(new_text)
+            # A position wins over an id: with repeated ids across <file>
+            # elements the id alone cannot say which unit was meant, and
+            # queueing the same text under both keys would fill a second unit.
             if seg_number is not None:
                 try:
                     wanted_by_position[int(seg_number)] = new_text
+                    continue
                 except (TypeError, ValueError):
                     pass
+            if unit_id:
+                wanted_by_id.setdefault(str(unit_id), []).append(new_text)
 
         replacements_count = 0
         position = 0
@@ -406,6 +438,17 @@ class XliffProcessorService:
         filled_units = _units_in_order(filled)
         issues: list[dict] = []
 
+        for label, document in (("original", original), ("filled", filled)):
+            problem = _xml_problem(document)
+            if problem:
+                issues.append(
+                    {
+                        "unit_id": None,
+                        "kind": "xml",
+                        "detail": f"{label} is not well-formed XML: {problem}",
+                    }
+                )
+
         if len(original_units) != len(filled_units):
             issues.append(
                 {
@@ -430,24 +473,35 @@ class XliffProcessorService:
                     }
                 )
 
+        # Equal counts: compare position by position, which catches reordering
+        # and id drift. Different counts: align by id sequence, so duplicate ids
+        # do not collapse into one dict entry.
+        pairs: list[tuple[dict, dict]] = []
         if len(original_units) == len(filled_units):
             pairs = list(zip(original_units, filled_units))
         else:
-            # Counts differ, so positions cannot be compared; fall back to ids.
-            filled_by_id = {unit["id"]: unit for unit in filled_units}
-            pairs = [
-                (unit, filled_by_id[unit["id"]])
-                for unit in original_units
-                if unit["id"] in filled_by_id
-            ]
-            for unit_id in sorted(set(original_ids) - set(filled_ids), key=str):
-                issues.append(
-                    {"unit_id": unit_id, "kind": "ids", "detail": "unit missing from filled file"}
-                )
-            for unit_id in sorted(set(filled_ids) - set(original_ids), key=str):
-                issues.append(
-                    {"unit_id": unit_id, "kind": "ids", "detail": "unit not present in original"}
-                )
+            matcher = SequenceMatcher(a=original_ids, b=filled_ids, autojunk=False)
+            for opcode, i1, i2, j1, j2 in matcher.get_opcodes():
+                same_length = (i2 - i1) == (j2 - j1)
+                if opcode == "equal" or (opcode == "replace" and same_length):
+                    pairs.extend(zip(original_units[i1:i2], filled_units[j1:j2]))
+                    continue
+                for unit in original_units[i1:i2]:
+                    issues.append(
+                        {
+                            "unit_id": unit["id"],
+                            "kind": "ids",
+                            "detail": "unit missing from filled file",
+                        }
+                    )
+                for unit in filled_units[j1:j2]:
+                    issues.append(
+                        {
+                            "unit_id": unit["id"],
+                            "kind": "ids",
+                            "detail": "unit not present in original",
+                        }
+                    )
 
         changed: list[str] = []
         for before, after in pairs:
@@ -486,6 +540,16 @@ class XliffProcessorService:
                     {"unit_id": unit_id, "kind": "target", "detail": "target element removed"}
                 )
                 continue
+            if old_target is not None and _tag_without_state(
+                old_target["open"]
+            ) != _tag_without_state(new_target["open"]):
+                issues.append(
+                    {
+                        "unit_id": unit_id,
+                        "kind": "attributes",
+                        "detail": "target attributes changed",
+                    }
+                )
             if old_target is not None and old_target["inner"] == new_target["inner"]:
                 continue
 
@@ -519,15 +583,18 @@ class XliffProcessorService:
 
 
 def _unit_id(unit_start_tag: str) -> str | None:
-    match = re.search(r"""\bid\s*=\s*["']([^"']+)["']""", unit_start_tag)
+    match = re.search(r"""(?<![\w:-])id\s*=\s*["']([^"']+)["']""", unit_start_tag)
     return match.group(1) if match else None
 
 
 def _with_translated_state(open_tag: str) -> str:
     """Set state="translated" on a <target> opening tag, keeping other attributes."""
-    if re.search(r"\bstate\s*=", open_tag):
+    if re.search(r"(?<![\w:-])state\s*=", open_tag):
         open_tag = re.sub(
-            r"""(\bstate\s*=\s*)(["'])[^"']*\2""", r'\1"translated"', open_tag, count=1
+            r"""((?<![\w:-])state\s*=\s*)(["'])[^"']*\2""",
+            r'\1"translated"',
+            open_tag,
+            count=1,
         )
     else:
         open_tag = re.sub(
@@ -542,7 +609,12 @@ def _with_translated_state(open_tag: str) -> str:
 
 def _fill_target(unit_content: str, rendered: str) -> Tuple[str, bool]:
     """Write rendered content into the unit's <target>; False if there is none."""
-    match = TARGET_ELEMENT.search(unit_content)
+    # <alt-trans> carries its own <source>/<target>; never write into it.
+    parts = re.split(r"(?=<alt-trans\b)", unit_content, maxsplit=1, flags=re.IGNORECASE)
+    head = parts[0]
+    tail = parts[1] if len(parts) > 1 else ""
+
+    match = TARGET_ELEMENT.search(head)
     if match:
         element = match.group(0)
         if element.endswith("/>"):
@@ -550,39 +622,50 @@ def _fill_target(unit_content: str, rendered: str) -> Tuple[str, bool]:
         else:
             open_tag = _with_translated_state(element[: element.index(">") + 1])
         new_element = open_tag + rendered + "</target>"
-        return (
-            unit_content[: match.start()] + new_element + unit_content[match.end() :],
-            True,
-        )
+        new_head = head[: match.start()] + new_element + head[match.end() :]
+        return new_head + tail, True
 
     # No target yet: place it after seg-source when present, else after source.
-    anchor = re.search(r"</seg-source>", unit_content, re.IGNORECASE) or re.search(
-        r"</source>", unit_content, re.IGNORECASE
+    anchor = re.search(r"</seg-source>", head, re.IGNORECASE) or re.search(
+        r"</source>", head, re.IGNORECASE
     )
     if anchor is None:
         return unit_content, False
 
     new_target = _with_translated_state("<target>") + rendered + "</target>"
     position = anchor.end()
-    return unit_content[:position] + new_target + unit_content[position:], True
+    return head[:position] + new_target + head[position:] + tail, True
 
 
 def _render_fragment(text: str) -> str:
-    """Escape text runs while keeping well-formed XLIFF inline tags.
+    """Escape text while keeping well-formed XLIFF inline tags.
 
-    Anything that is not a balanced, allowed inline tag is treated as plain
-    text, so a model output containing '&' or a stray '<' can never produce a
-    document that does not parse.
+    Each candidate tag must parse as XML on its own and the kept tags must nest
+    correctly. Anything else -- a stray '<' left by html.unescape, an illegal
+    attribute, an unclosed or mismatched tag -- stays text and is escaped, so
+    the result is always well-formed XML.
     """
-    tags = list(INLINE_TAG.finditer(text))
-    if text.count("<") != len(tags):
-        return escape(text)
+    parser = etree.XMLParser(resolve_entities=False, no_network=True)
+    kept: list[re.Match[str]] = []
+    for match in INLINE_TAG.finditer(text):
+        closing, name, _, self_closing = match.groups()
+        if name.split(":")[-1] not in INLINE_ELEMENTS:
+            continue
+        if self_closing:
+            candidate = f"<r>{match.group(0)}</r>"
+        elif closing:
+            candidate = f"<r><{name}></{name}></r>"
+        else:
+            candidate = f"<r>{match.group(0)}</{name}></r>"
+        try:
+            etree.fromstring(candidate, parser)
+        except etree.XMLSyntaxError:
+            continue
+        kept.append(match)
 
     stack: list[str] = []
-    for tag in tags:
-        closing, name, _, self_closing = tag.groups()
-        if name.split(":")[-1] not in INLINE_ELEMENTS:
-            return escape(text)
+    for match in kept:
+        closing, name, _, self_closing = match.groups()
         if self_closing:
             continue
         if closing:
@@ -595,15 +678,41 @@ def _render_fragment(text: str) -> str:
 
     parts: list[str] = []
     position = 0
-    for tag in tags:
-        parts.append(escape(text[position : tag.start()]))
-        parts.append(tag.group(0))
-        position = tag.end()
+    for match in kept:
+        parts.append(escape(text[position : match.start()]))
+        parts.append(match.group(0))
+        position = match.end()
     parts.append(escape(text[position:]))
     return "".join(parts)
 
 
 SOURCE_ELEMENT = re.compile(r"<source\b[^>]*>[\s\S]*?</source>", re.IGNORECASE)
+
+
+def _attribute_value(tag: str, name: str) -> str:
+    """Value of an unqualified attribute inside a start tag, lowercased."""
+    match = re.search(rf"""(?<![\w:-]){re.escape(name)}\s*=\s*["']([^"']*)["']""", tag)
+    return match.group(1).strip().lower() if match else ""
+
+
+def _languages_in_unit_order(xml_content: str) -> list[tuple[str, str]]:
+    """(source-language, target-language) per trans-unit, taken from the <file>
+    that encloses each one, in document order."""
+    languages: list[tuple[str, str]] = []
+    file_tags = list(re.finditer(r"<file\b[^>]*>", xml_content, re.IGNORECASE))
+    for position, file_tag in enumerate(file_tags):
+        end = (
+            file_tags[position + 1].start()
+            if position + 1 < len(file_tags)
+            else len(xml_content)
+        )
+        block = xml_content[file_tag.end() : end]
+        pair = (
+            _attribute_value(file_tag.group(0), "source-language"),
+            _attribute_value(file_tag.group(0), "target-language"),
+        )
+        languages.extend([pair] * len(UNIT_ELEMENT.findall(block)))
+    return languages
 
 
 def _units_in_order(xml: str) -> list[dict]:
@@ -636,19 +745,48 @@ def _target_parts(unit_content: str) -> dict | None:
 
 
 def _state_of(tag: str) -> str | None:
-    match = re.search(r"""\bstate\s*=\s*["']([^"']*)["']""", tag)
+    match = re.search(r"""(?<![\w:-])state\s*=\s*["']([^"']*)["']""", tag)
     return match.group(1) if match else None
 
 
+def _tag_without_state(open_tag: str) -> str:
+    """An opening tag with its state attribute removed, for comparison."""
+    tag = re.sub(
+        r"""\s+(?<![\w:-])state\s*=\s*(["'])[^"']*\1""", "", open_tag, count=1
+    )
+    return re.sub(r"\s+>", ">", tag)
+
+
+def _xml_problem(document: str) -> str | None:
+    """The XMLSyntaxError message if the document does not parse, else None."""
+    parser = etree.XMLParser(resolve_entities=False, no_network=True)
+    try:
+        etree.fromstring(document.encode("utf-8"), parser)
+        return None
+    except etree.XMLSyntaxError as error:
+        return str(error)
+
+
 def _tag_skeleton(fragment: str) -> list[str]:
-    """'localname:id' for each opening or self-closing inline tag, in order."""
+    """Inline tag structure: name, id, ctype, self-closing, and close markers."""
     skeleton: list[str] = []
-    for closing, name, attrs, _ in INLINE_TAG.findall(fragment):
+    for closing, name, attrs, self_closing in INLINE_TAG.findall(fragment):
         local = name.split(":")[-1]
-        if closing or local not in INLINE_ELEMENTS:
+        if local not in INLINE_ELEMENTS:
             continue
-        id_match = re.search(r"""\bid\s*=\s*["']([^"']*)["']""", attrs)
-        skeleton.append(f"{local}:{id_match.group(1) if id_match else ''}")
+        if closing:
+            skeleton.append(f"/{local}")
+            continue
+        id_match = re.search(r"""(?<![\w:-])id\s*=\s*["']([^"']*)["']""", attrs)
+        ctype_match = re.search(r"""(?<![\w:-])ctype\s*=\s*["']([^"']*)["']""", attrs)
+        skeleton.append(
+            "{name}[{id}|{ctype}]{self_closing}".format(
+                name=local,
+                id=id_match.group(1) if id_match else "",
+                ctype=ctype_match.group(1) if ctype_match else "",
+                self_closing="/" if self_closing else "",
+            )
+        )
     return skeleton
 
 
@@ -665,40 +803,36 @@ def _xliff_schema() -> etree.XMLSchema:
     return etree.XMLSchema(etree.fromstring(_schema_bytes()))
 
 
-@lru_cache(maxsize=1)
-def _known_attributes() -> frozenset[str]:
-    """Attribute names the XLIFF 1.2 schema declares, so anything else can be
-    treated as a vendor extension."""
-    root = etree.fromstring(_schema_bytes())
-    return frozenset(
-        name
-        for element in root.iter(f"{{{XSD_NAMESPACE}}}attribute")
-        if (name := element.get("name"))
-    )
-
-
 def _strip_extensions(tree: etree._ElementTree) -> dict[str, int]:
     """Remove vendor extensions from a parsed tree, in place.
 
-    Returns {"{namespace}name" or "name": occurrences} for what was removed.
+    Only two shapes are treated as extensions: elements and attributes in a
+    foreign namespace, and unqualified attributes prefixed `x-` (Smartcat's
+    `x-state-qualifier`). Anything else the schema does not declare -- a typo
+    such as `stte=` -- is left in place so validation fails on it.
+
+    Returns {"{namespace}name" or "x-name": occurrences} for what was removed.
     """
     ignored: dict[str, int] = {}
     for element in list(tree.iter()):
         if not isinstance(element.tag, str):
             continue
-        if not element.tag.startswith(f"{{{XLIFF_NAMESPACE}}}"):
-            ignored[element.tag] = ignored.get(element.tag, 0) + 1
-            parent = element.getparent()
-            if parent is not None:
-                parent.remove(element)
-            continue
+        if element.tag.startswith("{"):
+            if element.tag.startswith(f"{{{XLIFF_NAMESPACE}}}"):
+                pass
+            else:
+                ignored[element.tag] = ignored.get(element.tag, 0) + 1
+                parent = element.getparent()
+                if parent is not None:
+                    parent.remove(element)
+                continue
         for name in list(element.attrib):
             if name.startswith("{"):
                 if name.startswith(f"{{{XLIFF_NAMESPACE}}}") or name.startswith(
                     f"{{{XML_NAMESPACE}}}"
                 ):
                     continue
-            elif name in _known_attributes():
+            elif not name.lower().startswith("x-"):
                 continue
             ignored[name] = ignored.get(name, 0) + 1
             del element.attrib[name]

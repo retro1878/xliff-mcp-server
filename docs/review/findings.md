@@ -139,6 +139,8 @@ Consequences, measured in `/tmp/probe4.py` with this environment:
 - **Caveat:** all of the above is a property of translate-toolkit 3.20.1. The project pins only `translate-toolkit>=3.0.0`; whether 3.0.0 uses the same safe parser was not checked. If a floor bump is desired it is a dependency decision for the owner, not something to change unasked.
 - The code passes `content.encode("utf-8")` into a parser with `encoding=None`, so the XML declaration is trusted for encoding. A `str` content that was decoded correctly round-trips; a file declaring a non-UTF-8 encoding would be mis-parsed.
 
+> **Correction (2026-10-30, Step 7):** the first sentence of this section was true when Step 1 was written and is no longer true. Step 6 added a direct `from lxml import etree` in `xliff_processor.py` for `schema_check()`.
+
 ## 7. Risks, ranked
 
 1. **Data corruption on write** — unescaped `&`/`<`/`>` produces a file Smartcat cannot import (reproduced). This is the top risk because it is silent: `replace_xliff_targets` returns `success: true` with a broken document.

@@ -95,11 +95,18 @@ def test_diff_report_compares_duplicates_by_position() -> None:
 
 
 def test_reordered_units_are_flagged() -> None:
-    swapped = TWO_FILES.replace(
-        '<trans-unit id="1"><source>Alpha</source><target state="needs-translation"></target></trans-unit>\n      <trans-unit id="2"><source>Beta</source><target state="needs-translation"></target></trans-unit>',
-        '<trans-unit id="2"><source>Beta</source><target state="needs-translation"></target></trans-unit>\n      <trans-unit id="1"><source>Alpha</source><target state="needs-translation"></target></trans-unit>',
+    import re
+
+    single_file = TWO_FILES.split("<file", 2)[1]
+    single_file = "<file" + single_file
+    first_unit = re.search(r'<trans-unit id="1">.*?</trans-unit>', single_file, re.S).group(0)
+    second_unit = re.search(r'<trans-unit id="2">.*?</trans-unit>', single_file, re.S).group(0)
+    swapped = (
+        single_file.replace(first_unit, "@@1@@")
+        .replace(second_unit, first_unit)
+        .replace("@@1@@", second_unit)
     )
 
-    report = XliffProcessorService.diff_report(TWO_FILES, swapped)
+    report = XliffProcessorService.diff_report(single_file, swapped)
 
     assert any("differs at this position" in issue["detail"] for issue in report["issues"])

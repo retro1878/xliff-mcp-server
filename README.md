@@ -241,7 +241,7 @@ python -m xliff_mcp.server
 
 - Python 3.10+
 - mcp >= 1.2.0
-- translate-toolkit >= 3.0.0
+- translate-toolkit >= 3.20.1
 - lxml >= 4.9.0
 - pydantic >= 2.0.0
 

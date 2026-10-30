@@ -91,3 +91,13 @@ All four changes are in `xliff_mcp/xliff_processor.py`; `tests/test_fill_invaria
 - **Q8 — dependency floor.** `pyproject.toml`: `translate-toolkit>=3.0.0` → `>=3.20.1` (first release with the safe parser is 3.19.4; only 3.20.1 has been run here).
 - **Tests**: `tests/test_schema_validation.py` (7), `tests/test_multi_file.py` (6). Suite `61 passed`.
 - **Regression check**: re-filling the supplied Smartcat export after these changes produced a byte-identical file (md5 `580dc6f6…` before and after), and it is `schema_valid: true` with five ignored extension names.
+
+## Step 7 — response to the independent review
+
+### 2026-10-30 — seven bugs fixed, one deliberate limit, one data scrub
+
+- **Findings acted on**: 1–10 and 12 of `review-findings.md`, with a point-by-point disposition in `review-response.md`.
+- **Files changed**: `xliff_mcp/xliff_processor.py` (`replace_xliff_targets` payload handling, `process_xliff_with_tags` + `_extract_element_content` positional extraction, `_render_fragment` per-tag validation, `_fill_target` `<alt-trans>` split, state/id attribute regexes, `schema_check` root check + exception handling, `_strip_extensions` restricted to `x-` and foreign namespaces, `diff_report` xml/attribute/tag checks + `SequenceMatcher`, `_tag_skeleton` structure, `_languages_in_unit_order`), `README.md` (dependency line), `docs/review/*` (scrub + this trail), `tests/test_review_regressions.py` (16 tests).
+- **Data scrub**: real company names, username, identifiers and the notary number were removed from committed `docs/review/tests.md` (finding #11). They remain in the pushed history; rewriting it needs the owner's decision.
+- **Not changed**: `xliff_mcp/auth.py` (unbounded rate-limit dict, unkeyed bypass, dead helpers) — upstream behaviour, out of scope for this task.
+- **Result**: `76 passed`, `ruff check` clean, and the real filled export is still byte-identical (`580dc6f6…`).

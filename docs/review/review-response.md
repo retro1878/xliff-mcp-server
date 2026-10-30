@@ -1,0 +1,54 @@
+# Response to the independent review
+
+Review under discussion: `docs/review/review-findings.md` (Argon, 2026-10-30, against `db407ba`).
+Every finding was reproduced before being acted on; the reproduction output is in `tests.md` under Step 7. Fixes are in the commit that follows this file.
+
+| # | Finding | Verdict | Where |
+| --- | --- | --- | --- |
+| 1 | Entry with both `segNumber` and `unitId` fills two units | Confirmed, fixed | `replace_xliff_targets` |
+| 2 | `process_xliff_with_tags` returns the first unit for repeated ids | Confirmed, fixed | `process_xliff_with_tags` |
+| 3 | `&lt;` in a tagged segment destroys tags on round trip | Confirmed, fixed | `_render_fragment` |
+| 4 | `_render_fragment` passes malformed tag candidates through | Confirmed, fixed | `_render_fragment` |
+| 5 | `schema_check` raises on unresolved entities | Confirmed, fixed | `schema_check` |
+| 6 | `_fill_target` writes into `<alt-trans>` | Confirmed, fixed | `_fill_target` |
+| 7 | `\bstate` matches `sc:state` / `x-state` | Confirmed, fixed | `_with_translated_state`, `_state_of`, `_unit_id` |
+| 8 | `diff_report` blind spots | Confirmed, fixed except one deliberate limit | `diff_report`, `_tag_skeleton` |
+| 9 | `schema_check` strips any unknown unqualified attribute | Confirmed, fixed | `_strip_extensions` |
+| 10 | Languages always come from the first `<file>` | Confirmed, fixed | `_languages_in_unit_order` |
+| 11 | Customer data in committed docs | Confirmed, scrubbed today; history still affected | `docs/review/tests.md` |
+| 12 | README dependency line, auth dead code | README fixed; auth left untouched | `README.md` |
+
+## What was done for each
+
+1. **#1** A payload entry carrying `segNumber` is now stored only under that position and never queued by id. Repro before: `[{segNumber: 3, unitId: "1"}]` filled units 1 and 3 (`count 2`, `['غاما','','غاما']`). After: `count 1`, `['','','غاما']`. Test: `test_entry_with_both_keys_fills_only_its_position`.
+2. **#2** `process_xliff_with_tags` no longer searches the document for an id. The i-th non-header unit of the store is matched to the i-th `<trans-unit>` by position, so repeated ids read their own body, and the per-unit work is no longer O(N²) in document size. Test: `test_with_tags_uses_each_units_own_body_with_duplicate_ids`.
+3. **#3** A stray `<` from `html.unescape` no longer forces the whole fragment to be escaped. Text between kept tags is escaped run by run, so `1 < 2 <g id="1">text</g>` comes back as `1 &lt; 2 <g id="1">text</g>`. Test: `test_lt_round_trip_keeps_tags_and_escapes_the_less_than`.
+4. **#4** Every tag candidate is parsed on its own before it is trusted: a self-closing tag as `<r>{tag}</r>`, an opening tag with a synthetic close, a closing tag against a synthetic open. `</g/>`, `<x id="1 & 2"/>`, `<x bogus/>` and `<ns:g>` are all rejected and escaped. Tests: `test_unusable_tag_candidates_are_escaped_not_written_raw`.
+5. **#5** `schema_check` checks the root is `{…xliff} xliff`, and catches `XMLSchemaValidateError` around validation. A document with an entity reference now returns `valid: false` with a message instead of raising. Tests: `test_document_with_an_entity_reference_does_not_raise`, `test_validate_tool_survives_the_same_document`.
+6. **#6** `_fill_target` splits the unit at the first `<alt-trans` and only ever writes before it. A unit without a target gets one after `</seg-source>`/`</source>`; the suggestion inside `<alt-trans>` is untouched. Test: `test_alt_trans_target_is_never_touched`.
+7. **#7** Attribute-name patterns now use `(?<![\w:-])` instead of `\b`. `<target sc:state="locked" state="needs-translation">` keeps `sc:state` and gets `state="translated"`. Test: `test_namespaced_state_attribute_is_not_rewritten`.
+8. **#8** Four of the five sub-findings are fixed:
+   - malformed `filled` is reported as an issue of kind `xml` (`test_diff_report_flags_malformed_output`);
+   - `<target>` attributes other than `state` are compared (`test_diff_report_flags_changed_target_attributes`);
+   - `_tag_skeleton` now records name, id, `ctype`, self-closing and close markers, so a pair becoming self-closing or losing `ctype` is caught (`test_diff_report_flags_a_pair_turned_into_self_closing`, `test_diff_report_flags_a_dropped_ctype`);
+   - when counts differ, alignment uses `difflib.SequenceMatcher` on the id sequence instead of a dict, so a dropped duplicate is reported as a missing unit (`test_diff_report_reports_a_dropped_duplicate_unit_by_id`).
+
+   **Not fixed, by design:** a unit whose target text is byte-identical before and after is still skipped, so `changed_units` stays "units whose target text changed" and a state-only edit is not reported. That is the definition the tool has used since Step 4, and `replace_xliff_targets` always rewrites the text when it writes the state, so a real fill cannot hit it.
+9. **#9** Only unqualified attributes starting with `x-` are treated as extensions, plus genuine foreign-namespace elements and attributes. Everything else the schema does not know is left in place, so `<source stte="x">` fails validation. A non-XLIFF root is rejected. Tests: `test_attribute_typo_fails_the_schema`, `test_non_xliff_root_is_rejected`. The schema-derived `_known_attributes()` helper was deleted; it is no longer needed.
+10. **#10** `_languages_in_unit_order()` walks `<file>` blocks and returns the language pair of the file that encloses each unit. Test: `test_with_tags_reads_languages_from_the_enclosing_file`.
+11. **#11** The committed strings were scrubbed in this commit: the real names, username, identifiers and notary number are gone from `docs/review/tests.md`. The `out/` copies remain on disk because the owner asked for the filled file and it is gitignored. **The strings are still in the pushed git history** (commits `9223d35` and later); removing them from history requires a rewrite and force-push, which is the owner's decision.
+12. **#12** `README.md` now says `translate-toolkit >= 3.20.1`. `RateLimiter`'s unbounded dict, the unkeyed-HTTP bypass, the missing payload size limit and the dead `SecurityHeaders`/`require_auth` code are upstream issues that predate this work; they are recorded here and left untouched, because changing the HTTP transport's behaviour was not part of this task.
+
+## Corrections to our own documentation
+
+- `findings.md` §6 says the package never imports lxml. That was true in Step 1 and is no longer true: `schema_check` (Step 6) imports `lxml.etree` directly. A note has been added to that section.
+- `changelog.md` Step 6 said duplicate ids across `<file>` were "fixed" for Q7; they were fixed for the write path and the report only. The read path is fixed in this commit.
+
+## Verification
+
+```
+.venv/Scripts/python -m pytest -q          76 passed
+.venv/Scripts/ruff check .                 All checks passed!
+```
+
+Re-filling the real export after the renderer rewrite produced the same byte-identical file (`md5 580dc6f6ff35f495ae44fa33e751edfe`), and `schema_check` still reports it valid. New tests: 16 in `tests/test_review_regressions.py`.

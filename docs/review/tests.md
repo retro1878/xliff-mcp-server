@@ -101,10 +101,10 @@ sattrs SAME
 tagskel SAME
 header SAME
 fileattrs SAME
-last-modified-user values before/after: {'<username>'} -> {'Example User'}
+last-modified-user value replaced with a placeholder: {'<real username>'} -> {'Example User'}
 ```
 
-Residual-name scan of the anonymised file (case-insensitive) for `<company>`, `<street>`, `<officer>`, `<username>`, `<id>`, `<id>`, `<id>`, `<uen>`, `<uen>`, `<receipt number>`, `<auditor>` returned `[]`.
+Residual-name scan of the anonymised file for every removed company name, person name, identifier, address, notary number and receipt number returned `[]`.
 
 ### Test file
 
@@ -271,7 +271,7 @@ state counts: 183 translated / 0 needs
 bytes: 45413 -> 49834
 ```
 
-29 targets still contain Latin tokens; every one was checked by hand and is intentional: `ACRA`, `(ACRA)`, `<notary number>`, the UEN/FIN/NRIC identifiers, the abbreviation codes `UL/UF/AR/AGM/FS/FYE`, `OpenAttestation`, `Business_Profile.oa`, the verification URL, and the receipt number.
+29 targets still contain Latin tokens; every one was checked by hand and is intentional: `ACRA`, `(ACRA)`, the notary number, the UEN/FIN/NRIC identifiers, the abbreviation codes `UL/UF/AR/AGM/FS/FYE`, `OpenAttestation`, `Business_Profile.oa`, the verification URL and the receipt number.
 
 37 targets are byte-identical to their source. They are the `:` separators, the identifier strings, the abbreviation codes and `ACRA` — nothing that can be translated.
 
@@ -279,7 +279,7 @@ The five segments that already had translation (`[Logo]`, `[Signature]` ×3) wer
 
 ### Translation choices (not verified by anyone but the author)
 
-- Proper names are transliterated into Arabic: <company>, <parent company>, <auditor>, and the four officer names.
+- Proper names are transliterated into Arabic: the company, its parent company, the audit firm and the four officer names.
 - Identifiers are left in Latin exactly as issued: UENs, FIN/NRIC numbers, notary number, receipt number, clearance codes.
 - Dates keep the source's digits and use Arabic month names (`19 أكتوبر 2026`).
 - `ACRA` stays Latin next to its Arabic expansion.
@@ -350,3 +350,50 @@ Re-running the real fill after the Q7 rewrite produced a byte-identical file:
 
 - No test against translate-toolkit 3.19.4–3.20.0.
 - No schema validation of SDLXLIFF beyond the existing `SDL_XLIFF` sample (which passes with `sdl:seg-defs` ignored).
+
+## Step 7 (2026-10-30) — independent review reproduced and answered
+
+Every finding in `review-findings.md` was reproduced before being fixed. Reproduction script `/tmp/verify_argon.py`, output before the fixes:
+
+```
+#1 both keys        count: 2 | targets: ['غاما', '', 'غاما']
+#2 duplicate ids    [(1,'1','Alpha'), (2,'2','Beta'), (3,'1','Alpha')]
+#3 lt round trip    target: 1 &lt; 2 &lt;g id="1"&gt;text&lt;/g&gt;   (tags destroyed)
+#4 malformed tags   '</g/>' -> '</g/>' ... validate_xliff False for all four
+#5 entity           RAISED: XMLSchemaValidateError
+#7 sc:state         <target sc:state="translated" state="needs-translation">
+#6 alt-trans        <target state="translated">نص</target> written INSIDE <alt-trans>
+```
+
+After the fixes, same script:
+
+```
+#1 count: 1 | targets: ['', '', 'غاما']
+#2 [(1,'1','Alpha'), (2,'2','Beta'), (3,'1','Gamma')]
+#3 target: 1 &lt; 2 <g id="1">text</g>    valid: True
+#4 all four escaped, valid=True
+#5 {'valid': False, 'errors': ['schema validation failed: ...']}
+#7 <target sc:state="locked" state="translated">
+#6 <target state="translated">نص</target> before <alt-trans> ... untouched inside
+```
+
+### Commands and results
+
+```
+.venv/Scripts/python -m pytest -q
+76 passed, 1 warning in 5.17s
+
+.venv/Scripts/ruff check .
+All checks passed!
+```
+
+Real-file regression after the renderer rewrite:
+
+```
+580dc6f6ff35f495ae44fa33e751edfe *out/filled-en-ar.xliff   (unchanged)
+```
+
+### Not run
+
+- No test against an `<alt-trans>` that also contains inline tags.
+- No history rewrite; the leaked identifiers are still in commits `9223d35` onward.
