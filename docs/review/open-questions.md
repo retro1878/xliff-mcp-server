@@ -2,17 +2,17 @@
 
 Items needing a decision from the repository owner. Each states the default that will be used if no answer arrives, so work is not blocked.
 
-## Q1 — SDLXLIFF state vs "header stays byte-identical" (blocks Step 2/3)
+## Q1 — SDLXLIFF state vs "header stays byte-identical" — **RESOLVED 2026-10-30**
 
-The fill must set segment state. For Smartcat XLIFF 1.2 the state is `target/@state` — inside `<target>`, so it does not violate the byte-identical rule. For SDLXLIFF the state is `<sdl:seg id="N" conf="…"/>` inside `<header><sdl:seg-defs>`, i.e. the header must change.
+**Owner's answer:** SDLXLIFF is out of scope. Work only on `.xliff` files as exported by Smartcat.
 
-**Default if unanswered:** for files whose root carries the `sdl` namespace, update the matching `<sdl:seg>` element's `conf` to `Translated` and change nothing else in the header; the Step 2 test will assert "header byte-identical except that one attribute value". For every non-SDLXLIFF file the header stays byte-identical.
+**Consequence:** no `.sdlxliff` handling, no SDLXLIFF fixtures, no SDLXLIFF tests. The upstream test `test_sdl_xliff_uses_file_level_language_metadata` is left as it is (read-only language extraction, unaffected). `findings.md` §3 and §5 still describe the SDLXLIFF behaviour because it was observed; it is recorded as a known limitation, not a promise.
 
-## Q2 — May the real Smartcat export be committed? (blocks nothing, matters before pushing)
+## Q2 — May the real Smartcat export be committed? — **RESOLVED 2026-10-30**
 
-`tests/fixtures/smartcat-acra-en-ar.xliff` is a genuine ACRA business profile for <company>, with real officer names, NRIC/FIN-style identifiers and a notary number. It was provided for this task. Committing it to a public GitHub fork publishes those names.
+**Owner's answer:** anonymise it.
 
-**Default if unanswered:** keep it in the working tree, commit it locally, do **not** push the fork until the owner answers. If the answer is no, replace it with a structurally identical anonymised fixture created from it (same units, same tags, placeholder names) and note the substitution in `changelog.md`.
+**Consequence:** `tests/fixtures/smartcat-en-ar.xliff` is a structurally identical derivation of the supplied export: same 183 units, same ids, same attribute names and values for `state`, `xml:space`, `approved`, `sc:locked`, `sc:last-modified-date`; the only values changed are company names, officer names, FIN/NRIC-style identifiers, UENs, the notary number, the receipt number, the auditor name, the address and `sc:last-modified-user`. Verified equal on unit count, id list, attribute-name sets, tag skeletons, `<header>` bytes and `<file>` attributes (`/tmp/verify_anon2.py`, recorded in `tests.md`). The real file was deleted from the working tree and is not in git history.
 
 ## Q3 — Which `state` should a filled target get?
 

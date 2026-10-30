@@ -14,3 +14,14 @@ Every change made to this fork for the Smartcat fill-target work, in order, with
 ### Note on `tests/fixtures/`
 
 `tests/fixtures/` did not exist in the fork (`dd909e0`). The real Smartcat export supplied for this task was copied to `tests/fixtures/smartcat-acra-en-ar.xliff` on disk during Step 1 **but is not part of the Step 1 commit**; whether it may be committed is open (`open-questions.md`, Q2). No other fixture was invented in Step 1 — `tests/samples.py` already contains a plain XLIFF 1.2 and an SDLXLIFF sample, and reusing them is the smaller change.
+
+## Step 2 — tests first (red)
+
+### 2026-10-30 — invariant tests and fixtures, no server code changed
+
+- **Files added**: `tests/test_fill_invariants.py`, `tests/fixtures/plain-en-ar.xliff`, `tests/fixtures/plain-en-fa.xliff`, `tests/fixtures/smartcat-en-ar.xliff`, `tests/fixtures/README.md`.
+- **Files removed**: `tests/fixtures/smartcat-acra-en-ar.xliff` (the real export copied in Step 1; never committed). Replaced by the anonymised derivation after Q2 was answered.
+- **Files changed**: `docs/review/{tests,changelog,open-questions}.md`.
+- **Reason**: the task requires tests that fail before the fix. The suite is deliberately red: `10 failed, 27 passed`.
+- **Server behaviour changed**: none.
+- **Scope decision (Q1)**: SDLXLIFF is out of scope; `.xliff` only.

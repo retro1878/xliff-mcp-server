@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
+  <file original="statement.txt" datatype="plaintext" source-language="en-GB" target-language="fa">
+    <body>
+      <trans-unit id="1">
+        <source>Balance: 6,889,990,769 IRR</source>
+        <target state="needs-translation"></target>
+      </trans-unit>
+      <trans-unit id="2">
+        <source>Registered with ACRA<x id="1" /> on 31 JAN 2019</source>
+        <target state="needs-translation"></target>
+      </trans-unit>
+      <trans-unit id="3">
+        <source>Company status</source>
+        <target state="needs-translation"></target>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>

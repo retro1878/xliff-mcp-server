@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
+  <file original="invoice.txt" datatype="plaintext" source-language="en-GB" target-language="ar">
+    <header><tool tool-id="fixture" tool-name="fixture" /></header>
+    <body>
+      <trans-unit id="1" approved="no">
+        <source>Total amount: 1,250.00 GBP</source>
+        <target state="needs-translation"></target>
+      </trans-unit>
+      <trans-unit id="2" approved="no">
+        <source xml:space="preserve">Page <x id="1" /> of <g id="2">10</g></source>
+        <target state="needs-translation" xml:space="preserve"></target>
+      </trans-unit>
+      <trans-unit id="3" approved="no">
+        <source>Payment &amp; settlement</source>
+        <target state="needs-translation"></target>
+      </trans-unit>
+      <trans-unit id="4" approved="no">
+        <source>ACRA receipt 2026</source>
+        <target state="translated" state-qualifier="exact-match">إيصال 2026</target>
+      </trans-unit>
+      <trans-unit id="5" approved="no">
+        <source xml:space="preserve"> spaced </source>
+        <target state="needs-translation" xml:space="preserve"></target>
+      </trans-unit>
+    </body>
+  </file>
+</xliff>

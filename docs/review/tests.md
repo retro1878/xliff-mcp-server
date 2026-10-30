@@ -81,3 +81,58 @@ Conclusion recorded in `findings.md` §6: no external entity is read and no enti
 - No test of the HTTP transport, auth, or rate limiting.
 - No round-trip through Smartcat itself (that is the owner's final acceptance step).
 - No test with an Arabic or Persian *full-file* fill — only the four-unit probe above.
+
+## Step 2 (2026-10-30) — invariant tests written first, suite is red
+
+### Fixtures created
+
+- `tests/fixtures/smartcat-en-ar.xliff` — anonymised derivation of the supplied export. The real file was removed from the working tree before this step.
+- `tests/fixtures/plain-en-ar.xliff`, `tests/fixtures/plain-en-fa.xliff` — hand-written.
+- `tests/fixtures/README.md` — provenance.
+
+Anonymisation verification (`/tmp/verify_anon2.py`, run before the real file was deleted):
+
+```
+units SAME
+ids SAME
+attrnames SAME
+tattrs SAME
+sattrs SAME
+tagskel SAME
+header SAME
+fileattrs SAME
+last-modified-user values before/after: {'<username>'} -> {'Example User'}
+```
+
+Residual-name scan of the anonymised file (case-insensitive) for `<company>`, `<street>`, `<officer>`, `<username>`, `<id>`, `<id>`, `<id>`, `<uen>`, `<uen>`, `<receipt number>`, `<auditor>` returned `[]`.
+
+### Test file
+
+`tests/test_fill_invariants.py` — 16 tests. `assert_output_invariants()` is the whole contract in one function: unit count and id order, bytes outside `<target>`, `<source>` bytes per unit, target attributes except `state`, `state="translated"` on filled targets, untouched units byte-identical, XML well-formed, `validate_xliff` accepted, tag skeleton of a filled target equal to its source.
+
+Five meta-tests take a filled document and break one thing, asserting the checker raises.
+
+### Command and result (before any server change)
+
+```
+.venv/Scripts/python -m pytest tests/test_fill_invariants.py -q
+```
+
+```
+10 failed, 6 passed in 1.64s
+```
+
+Full suite:
+
+```
+.venv/Scripts/python -m pytest -q
+10 failed, 27 passed, 1 warning in 6.32s
+```
+
+The 10 failures are the defects listed in `findings.md` §5 — state never set, `&` written raw, whitespace stripped, extraction loses inline tags in the non-tag path, and (as a consequence) the five meta-tests cannot reach their own assertion because the baseline produced by the current code already violates the state invariant. They are expected to go green in Step 3; the meta-tests only become meaningful then.
+
+### Not run in Step 2
+
+- Nothing was run against Smartcat itself.
+- No SDLXLIFF test was written (out of scope, Q1).
+- The meta-tests do not yet demonstrate their own assertion (see above).
