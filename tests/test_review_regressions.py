@@ -409,3 +409,50 @@ def test_tool_returns_structured_skips() -> None:
     assert result["skipped_units"] == [
         {"unit_id": "1", "seg_number": None, "reason": "tags_mismatch"}
     ]
+
+
+# Round 4 -------------------------------------------------------------------
+def test_diff_report_after_filling_a_self_closing_source_reports_nothing() -> None:
+    source = one_unit(
+        '<source/><alt-trans><source>Old <g id="1">tag</g></source>'
+        "<target>old</target></alt-trans>"
+    )
+
+    filled, count = XliffProcessorService.replace_xliff_targets(
+        source, [{"unitId": "1", "aiResult": "نص"}]
+    )
+
+    assert count == 1
+    assert XliffProcessorService.diff_report(source, filled)["issues"] == []
+
+
+def test_diff_report_accepts_reordered_placeholders() -> None:
+    source = one_unit(
+        '<source>From <x id="1"/> to <x id="2"/></source>'
+        '<target state="needs-translation"></target>'
+    )
+
+    filled, count = XliffProcessorService.replace_xliff_targets(
+        source, [{"unitId": "1", "aiResult": 'إلى <x id="2"/> من <x id="1"/>'}]
+    )
+
+    assert count == 1
+    assert XliffProcessorService.diff_report(source, filled)["issues"] == []
+
+
+def test_diff_report_still_flags_a_tag_that_changes_shape() -> None:
+    source = one_unit(
+        '<source><g id="1">x</g></source><target state="needs-translation"></target>'
+    )
+
+    filled, _ = XliffProcessorService.replace_xliff_targets(
+        source,
+        [{"unitId": "1", "aiResult": '<g id="1"/>'}],
+        require_tags=False,
+    )
+
+    kinds = {
+        issue["kind"]
+        for issue in XliffProcessorService.diff_report(source, filled)["issues"]
+    }
+    assert "tags" in kinds

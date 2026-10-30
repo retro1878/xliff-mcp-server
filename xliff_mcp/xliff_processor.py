@@ -624,9 +624,10 @@ class XliffProcessorService:
                         "detail": f"filled target state is {new_target['state']!r}",
                     }
                 )
-            source_tags = _tag_skeleton(before["source"])
+            source_tags = _tag_skeleton(_source_fragment(before["content"]))
             target_tags = _tag_skeleton(new_target["inner"])
-            if source_tags != target_tags:
+            # Order is not significant: a translation may swap placeholders.
+            if Counter(source_tags) != Counter(target_tags):
                 issues.append(
                     {
                         "unit_id": unit_id,
@@ -802,13 +803,12 @@ def _units_in_order(xml: str) -> list[dict]:
     """Every trans-unit in document order, including duplicate ids."""
     units: list[dict] = []
     for match in UNIT_ELEMENT.finditer(xml):
-        source = SOURCE_ELEMENT.search(match.group(2))
         units.append(
             {
                 "id": _unit_id(match.group(1)),
                 "start_tag": match.group(1),
                 "content": match.group(2),
-                "source": source.group(0) if source else "",
+                "source": _source_element(match.group(2)),
             }
         )
     return units
@@ -923,13 +923,18 @@ def _strip_extensions(tree: etree._ElementTree) -> dict[str, int]:
     return ignored
 
 
-def _source_fragment(unit_content: str) -> str:
-    """Inner XML of the unit's own <source>, ignoring <alt-trans>."""
+def _source_element(unit_content: str) -> str:
+    """The unit's own <source> element, ignoring <alt-trans>."""
     body, _ = _split_alt_trans(unit_content)
     source_match = SOURCE_ELEMENT.search(body)
-    if source_match is None:
+    return source_match.group(0) if source_match else ""
+
+
+def _source_fragment(unit_content: str) -> str:
+    """Inner XML of the unit's own <source>; empty for a self-closing source."""
+    element = _source_element(unit_content)
+    if not element:
         return ""
-    element = source_match.group(0)
     opening_end = element.index(">")
     if element[:opening_end].endswith("/"):
         return ""

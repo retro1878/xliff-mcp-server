@@ -199,5 +199,19 @@ All 12 findings are now fully covered.
      ```
      with distinct `reason` codes (e.g., `"tags_mismatch"`, `"unit_not_found"`, `"empty_translation"`, `"duplicate_target"`). That way an MCP client can immediately see *which* unit failed tag validation and retry just that segment without guessing from `skipped_count`.
 
+---
+
+## 6. Round 3 Re-Verification (`HEAD` at `c972afc`)
+
+Executed `.\.venv\Scripts\pytest -v` (**93 passed, 1 warning**), `.\.venv\Scripts\ruff check .` (**All checks passed!**), `.\.venv\Scripts\ruff format --check` on the 5 added test files (**5 files already formatted**), and targeted probes against `c972afc`:
+
+| # | Round 2 Post-Sign-Off Finding | Step 11 (`c972afc`) Status | Verification Details |
+| :--- | :--- | :--- | :--- |
+| **13** | `_tags_match_source` ignores `<alt-trans>` and self-closing `<source/>` | **Partially covered** | Fixed in `_source_fragment` (`xliff_processor.py:926-936`) and `_fill_target` (`:692`) for the replacement path, **but `_units_in_order` (`xliff_processor.py:801-814`) — used by `diff_report` — still runs `SOURCE_ELEMENT.search(match.group(2))` on the raw unit body without `_split_alt_trans` or self-closing `<source/>` handling.**<br>• **Reproduced:** When `replace_xliff_targets` fills a unit with `<source/><alt-trans><source>Old <g id="1">tag</g></source>...</alt-trans>` by inserting `<target>` between `<source/>` and `<alt-trans>`, `SOURCE_ELEMENT` in `_units_in_order` spans from `<source/>` across the newly inserted `<target>` into `<alt-trans>`'s `</source>`. As a result, `diff_report` falsely reports two issues: `{'unit_id': '1', 'kind': 'source', 'detail': 'source element changed'}` and `{'unit_id': '1', 'kind': 'tags', 'detail': "source ['g[1|]', '/g'] != target []"}`! |
+| **14** | Strict tag ordering rejects valid target-language tag reordering | **Partially covered** | Fixed in `_tags_match_source` (`xliff_processor.py:944-953`), which now compares `Counter(_tag_skeleton(...))`, **but `diff_report` (`xliff_processor.py:627-636`) still compares `source_tags != target_tags` as ordered lists instead of `Counter(source_tags) != Counter(target_tags)` (or `_tags_match_source`).**<br>• **Reproduced:** Calling the MCP tool `replace_xliff_targets` with `'إلى <x id="2"/> من <x id="1"/>'` succeeds (`replacements_count: 1, skipped_count: 0`), **but the `diff_report` returned in the very same response flags an error:** `{'unit_id': '1', 'kind': 'tags', 'detail': "source ['x[1|]/', 'x[2|]/'] != target ['x[2|]/', 'x[1|]/']"}`. |
+| **15** | Escaped literal tag syntax in `<source>` (`&lt;x id="1"/&gt;`) round-trips into real markup | **Covered** | `_render_fragment(text, allowed=_source_tag_set(unit_content))` (`xliff_processor.py:452-454, 702-757`) only preserves inline tags present in the unit's own `<source>`, escaping any literal or hallucinated tags back to `&lt;...&gt;`. |
+| **16** | `skipped_count` conflates four distinct skip reasons | **Covered** | `replace_xliff_targets_detailed` (`xliff_processor.py:380-484`) and the MCP tool `replace_xliff_targets` (`tool_registry.py:166-192`) now return `skipped_units: [{"unit_id", "seg_number", "reason"}]` with distinct `reason` codes (`"empty_translation"`, `"duplicate_target"`, `"unit_not_found"`, `"tags_mismatch"`). |
+
+
 
 

@@ -481,3 +481,19 @@ Reproduced with `/tmp/verify_argon3.py` before the fixes (all four printed `coun
 Six new tests; no existing test changed.
 
 Not run: no re-import into Smartcat after these changes; no test of a translation that adds a tag the source lacks (covered by the renderer's `allowed` filter in one direction only).
+
+## Step 12 (2026-10-30) — review round 3 re-verification
+
+Before: both cases returned `count: 1` and false issues (`source element changed`, and a tag-order difference). After:
+
+```
+#13 self-closing source + alt-trans  count: 1 | issues: []
+#14 accepted reorder                count: 1 | issues: []
+```
+
+```
+.venv/Scripts/python -m pytest -q     96 passed, 1 warning
+.venv/Scripts/ruff check .            All checks passed!
+```
+
+Not run: no re-import into Smartcat; no diff report against a document that mixes reordered and dropped tags.

@@ -122,3 +122,21 @@ Six new tests in `tests/test_review_regressions.py` cover 13–16 and the struct
 ### One behaviour to note
 
 Because only source tags are allowed, a translation may no longer *add* markup. That is intended, but it means a caller who was relying on the fill to format text (for example wrapping a term in `<g>`) will now get the tags escaped. No such caller exists in this repository.
+
+## Round 4 — Argon's re-verification of round 3 (`review-findings.md` §6)
+
+Findings 13 and 14 were only half-fixed: the fill changed, `diff_report` did not. Both are now consistent.
+
+| # | Was | Now |
+| --- | --- | --- |
+| 13 | `_units_in_order` read `<source>` from the raw unit body, so after a fill inserted `<target>` between `<source/>` and `<alt-trans>`, the source span leaked into `<alt-trans>` and the report claimed "source element changed" plus a tag issue | `_units_in_order` uses `_source_element()`, which splits at `<alt-trans>` and returns the unit's own `<source>`; filling that unit now reports `issues: []` |
+| 14 | the report compared ordered tag lists, so a reorder the fill had accepted was reported as an error in the same response | the report compares `Counter` multisets, like the fill; shape changes (paired → self-closing, dropped `ctype`) are still flagged |
+
+The fill gate and the report now use the same two helpers (`_source_fragment`, `_tag_skeleton` + `Counter`), so they cannot drift apart again without a test failing.
+
+```
+.venv/Scripts/python -m pytest -q     96 passed
+.venv/Scripts/ruff check .            All checks passed!
+```
+
+Three new tests: no issues after filling a unit with a self-closing source and `<alt-trans>`; no issues after an accepted placeholder reorder; a tag that changes shape is still flagged.

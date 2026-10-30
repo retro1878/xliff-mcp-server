@@ -155,3 +155,11 @@ All four changes are in `xliff_mcp/xliff_processor.py`; `tests/test_fill_invaria
 - **Why**: findings 13–16 of `review-findings.md` §5.
 - **Behaviour**: tags may be reordered (languages change word order); a tag the source does not have is escaped rather than written; skip reasons are machine-readable.
 - **Result**: `93 passed`.
+
+## Step 12 — review round 3 re-verification
+
+### 2026-10-30 — diff_report aligned with the fill
+
+- **Files changed**: `xliff_mcp/xliff_processor.py` (`_units_in_order` uses `_source_element`; the tag check compares `Counter`s), `tests/test_review_regressions.py` (3 tests), `docs/review/*`.
+- **Why**: findings 13 and 14 of `review-findings.md` §6 — the fill had been fixed but the report still used the old source extraction and ordered comparison, so it reported issues for a fill it had accepted.
+- **Result**: a clean fill of either case now reports `issues: []`; a tag whose shape changes is still flagged. `96 passed`.
