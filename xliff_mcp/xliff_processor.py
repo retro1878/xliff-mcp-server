@@ -2,11 +2,27 @@
 
 from translate.storage import xliff
 from typing import List, Tuple
+import html
 import logging
 import re
+from xml.sax.saxutils import escape
+
 from .models import XliffData
 
 logger = logging.getLogger(__name__)
+
+# One pass over the document; the unit id decides whether it is rewritten.
+UNIT_ELEMENT = re.compile(
+    r"(<(?:trans-unit|unit)\b[^>]*>)([\s\S]*?)(</(?:trans-unit|unit)>)",
+    re.IGNORECASE,
+)
+TARGET_ELEMENT = re.compile(
+    r"<target\b[^>]*?/>|<target\b[^>]*>[\s\S]*?</target>", re.IGNORECASE
+)
+# Inline elements allowed by XLIFF 1.2 (ElemGroup_TextContent).
+INLINE_TAG = re.compile(r"<(/?)([A-Za-z][\w:.-]*)((?:[^<>\"']|\"[^\"]*\"|'[^']*')*?)(/?)>")
+INLINE_ELEMENTS = {"g", "bpt", "ept", "ph", "it", "mrk", "x", "bx", "ex"}
+XML_SPACE_PRESERVE = re.compile(r"""xml:space\s*=\s*["']preserve["']""", re.IGNORECASE)
 
 
 class XliffProcessorService:
@@ -229,18 +245,19 @@ class XliffProcessorService:
                 return ""
             
             unit_content = unit_match.group(1)
-            
-            element_pattern = rf'<{element_name}[^>]*>([\s\S]*?)</{element_name}>'
-            
+
+            element_pattern = rf'(<{element_name}[^>]*>)([\s\S]*?)</{element_name}>'
+
             element_match = re.search(element_pattern, unit_content, re.IGNORECASE)
             if not element_match:
                 return ""
-            
-            content = element_match.group(1).strip()
-            
-            content = XliffProcessorService._decode_html_entities(content)
-            
-            return content
+
+            # xml:space="preserve" makes leading/trailing whitespace content.
+            content = element_match.group(2)
+            if not XML_SPACE_PRESERVE.search(element_match.group(1)):
+                content = content.strip()
+
+            return html.unescape(content)
         except Exception as e:
             logger.error(f"Failed to extract {element_name} content: {str(e)}")
             return ""
@@ -264,84 +281,130 @@ class XliffProcessorService:
             return "", ""
     
     @staticmethod
-    def _decode_html_entities(text: str) -> str:
-        """Decode HTML entities"""
-        text = text.replace('&amp;', '&')
-        text = text.replace('&lt;', '<')
-        text = text.replace('&gt;', '>')
-        text = text.replace('&quot;', '"')
-        text = text.replace('&#39;', "'")
-        text = text.replace('&nbsp;', ' ')
-        
-        return text
-    
-    @staticmethod
     def replace_xliff_targets(content: str, translations: List[dict]) -> Tuple[str, int]:
         """
         Replace target content in XLIFF file using string replacement
-        
+
+        Only the content of <target> and its state attribute are written; every
+        other byte of the document is preserved.
+
         Args:
             content: Original XLIFF file content
             translations: List of translation data with segNumber, aiResult, mtResult
-            
+
         Returns:
             (updated_content, replacement_count)
         """
-        updated_content = content
-        replacements_count = 0
-        
+        wanted: dict[str, str] = {}
         for translation in translations:
-            if not translation.get('aiResult') and not translation.get('mtResult'):
+            new_text = translation.get('aiResult') or translation.get('mtResult')
+            if not new_text:
                 continue
-            
-            new_target_content = translation.get('aiResult') or translation.get('mtResult') or ''
             unit_id = translation.get('unitId') or str(translation['segNumber'])
-            
-            unit_pattern = rf'(<(?:trans-unit|unit)[^>]*id=["\']{re.escape(unit_id)}["\'][^>]*>)([\s\S]*?)(</(?:trans-unit|unit)>)'
-            unit_match = re.search(unit_pattern, updated_content, re.IGNORECASE)
-            
-            if not unit_match:
-                continue
-            
-            unit_start = unit_match.group(1)
-            unit_content = unit_match.group(2)
-            unit_end = unit_match.group(3)
-            
-            target_pattern = r'<target[^>]*>[\s\S]*?</target>'
-            target_match = re.search(target_pattern, unit_content, re.IGNORECASE)
-            
-            if target_match:
-                existing_target = target_match.group(0)
-                
-                target_attr_pattern = r'<target([^>]*?)>'
-                target_attr_match = re.search(target_attr_pattern, existing_target, re.IGNORECASE)
-                target_attributes = target_attr_match.group(1) if target_attr_match else ''
-                
-                new_target = f'<target{target_attributes}>{new_target_content}</target>'
-                new_unit_content = unit_content.replace(existing_target, new_target)
-                
-                updated_content = updated_content.replace(
-                    unit_match.group(0),
-                    unit_start + new_unit_content + unit_end
-                )
-                
-                replacements_count += 1
-            else:
-                source_pattern = r'(<source[^>]*>[\s\S]*?</source>)'
-                source_match = re.search(source_pattern, unit_content, re.IGNORECASE)
-                
-                if source_match:
-                    new_target = f'\n        <target>{new_target_content}</target>'
-                    new_unit_content = unit_content.replace(
-                        source_match.group(0),
-                        source_match.group(0) + new_target
-                    )
-                    
-                    updated_content = updated_content.replace(
-                        unit_match.group(0),
-                        unit_start + new_unit_content + unit_end
-                    )
-                    
-                    replacements_count += 1
-        
+            wanted[unit_id] = new_text
+
+        replacements_count = 0
+
+        def rewrite(match: "re.Match[str]") -> str:
+            nonlocal replacements_count
+            unit_start, unit_content, unit_end = match.groups()
+            unit_id = _unit_id(unit_start)
+            if unit_id is None or unit_id not in wanted:
+                return match.group(0)
+
+            new_unit_content, changed = _fill_target(
+                unit_content, _render_fragment(wanted[unit_id])
+            )
+            if not changed:
+                return match.group(0)
+
+            replacements_count += 1
+            return unit_start + new_unit_content + unit_end
+
+        updated_content = UNIT_ELEMENT.sub(rewrite, content)
         return updated_content, replacements_count
+
+
+def _unit_id(unit_start_tag: str) -> str | None:
+    match = re.search(r"""\bid\s*=\s*["']([^"']+)["']""", unit_start_tag)
+    return match.group(1) if match else None
+
+
+def _with_translated_state(open_tag: str) -> str:
+    """Set state="translated" on a <target> opening tag, keeping other attributes."""
+    if re.search(r"\bstate\s*=", open_tag):
+        open_tag = re.sub(
+            r"""(\bstate\s*=\s*)(["'])[^"']*\2""", r'\1"translated"', open_tag, count=1
+        )
+    else:
+        open_tag = re.sub(
+            r"^<target",
+            '<target state="translated"',
+            open_tag,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+    return re.sub(r"\s+>", ">", open_tag)
+
+
+def _fill_target(unit_content: str, rendered: str) -> Tuple[str, bool]:
+    """Write rendered content into the unit's <target>; False if there is none."""
+    match = TARGET_ELEMENT.search(unit_content)
+    if match:
+        element = match.group(0)
+        if element.endswith("/>"):
+            open_tag = _with_translated_state(element[:-2] + ">")
+        else:
+            open_tag = _with_translated_state(element[: element.index(">") + 1])
+        new_element = open_tag + rendered + "</target>"
+        return (
+            unit_content[: match.start()] + new_element + unit_content[match.end() :],
+            True,
+        )
+
+    # No target yet: place it after seg-source when present, else after source.
+    anchor = re.search(r"</seg-source>", unit_content, re.IGNORECASE) or re.search(
+        r"</source>", unit_content, re.IGNORECASE
+    )
+    if anchor is None:
+        return unit_content, False
+
+    new_target = _with_translated_state("<target>") + rendered + "</target>"
+    position = anchor.end()
+    return unit_content[:position] + new_target + unit_content[position:], True
+
+
+def _render_fragment(text: str) -> str:
+    """Escape text runs while keeping well-formed XLIFF inline tags.
+
+    Anything that is not a balanced, allowed inline tag is treated as plain
+    text, so a model output containing '&' or a stray '<' can never produce a
+    document that does not parse.
+    """
+    tags = list(INLINE_TAG.finditer(text))
+    if text.count("<") != len(tags):
+        return escape(text)
+
+    stack: list[str] = []
+    for tag in tags:
+        closing, name, _, self_closing = tag.groups()
+        if name.split(":")[-1] not in INLINE_ELEMENTS:
+            return escape(text)
+        if self_closing:
+            continue
+        if closing:
+            if not stack or stack.pop() != name:
+                return escape(text)
+        else:
+            stack.append(name)
+    if stack:
+        return escape(text)
+
+    parts: list[str] = []
+    position = 0
+    for tag in tags:
+        parts.append(escape(text[position : tag.start()]))
+        parts.append(tag.group(0))
+        position = tag.end()
+    parts.append(escape(text[position:]))
+    return "".join(parts)

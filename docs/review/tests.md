@@ -136,3 +136,69 @@ The 10 failures are the defects listed in `findings.md` §5 — state never set,
 - Nothing was run against Smartcat itself.
 - No SDLXLIFF test was written (out of scope, Q1).
 - The meta-tests do not yet demonstrate their own assertion (see above).
+
+## Step 3 (2026-10-30) — after the fixes
+
+### Commands and results
+
+```
+.venv/Scripts/python -m pytest tests/test_fill_invariants.py -q
+```
+
+```
+14 passed in 1.47s        (first run, 2 test-helper bugs)
+```
+
+After fixing `tag_skeleton` (closing tags were counted) and the dropped-tag meta-test (it was editing the source):
+
+```
+.venv/Scripts/python -m pytest -q
+37 passed, 1 warning in 3.95s
+```
+
+```
+.venv/Scripts/ruff check .
+All checks passed!
+```
+
+### Deliberate breakage, caught by the suite
+
+`/tmp/demo.py` fills `plain-en-ar.xliff` correctly, then removes `<g id="2">10</g>` from one target and re-runs the contract checker:
+
+```
+clean fill -> checker: passes
+deliberately dropped <g id="2">10</g> from target of unit 2:
+  caught: unit 2: inline tags differ from source
+```
+
+Filled output for the two units concerned:
+
+```
+<target state="translated">المبلغ الإجمالي: 1,250.00 GBP</target>
+<target state="translated" xml:space="preserve">صفحة <x id="1" /> من <g id="2">10</g></target>
+```
+
+### Smartcat spot check
+
+`/tmp/sc_check.py` fills the seven units in `smartcat_translations()`:
+
+```
+replacements: 7
+outside-target bytes identical: True
+len%: 45344 45711
+state="translated" count: 12 | needs-translation: 171
+```
+
+`12 = 5` pre-existing translated targets `+ 7` newly filled. `9216312`:
+
+```
+<source xml:space="preserve">REGISTRAR OF COMPANIES &amp; BUSINESS NAMES</source>
+<target state="translated" xml:space="preserve">مسجل الشركات &amp; الأسماء التجارية</target>
+```
+
+### Not run in Step 3
+
+- No full-file fill of the 178 empty Smartcat segments (that is Step 4's diff-report run).
+- No run against Smartcat itself.
+- `xliff_mcp/xliff_processor.py` was deliberately not passed through `ruff format` (pre-existing unformatted file; see changelog).
+- Nothing tested on Python 3.10–3.13; only 3.14.7.

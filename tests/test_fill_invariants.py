@@ -68,11 +68,11 @@ def normalize_tag(tag: str) -> str:
 
 
 def tag_skeleton(fragment: str) -> list[tuple[str, str]]:
-    """(localname, id) for each inline tag, in document order."""
+    """(localname, id) for each opening or self-closing inline tag, in order."""
     out = []
-    for _, name, attrs, _ in TAG_RE.findall(fragment):
+    for closing, name, attrs, _ in TAG_RE.findall(fragment):
         local = name.split(":")[-1]
-        if local not in INLINE:
+        if closing or local not in INLINE:
             continue
         id_match = re.search(r'\bid="([^"]*)"', attrs)
         out.append((local, id_match.group(1) if id_match else ""))
@@ -125,9 +125,9 @@ def assert_output_invariants(
         assert SOURCE_RE.findall(before) == SOURCE_RE.findall(after), (
             f"unit {uid}: <source> changed"
         )
-        assert normalize_tag(target_open(before)) == normalize_tag(target_open(after)), (
-            f"unit {uid}: target attributes other than state changed"
-        )
+        assert normalize_tag(target_open(before)) == normalize_tag(
+            target_open(after)
+        ), f"unit {uid}: target attributes other than state changed"
         if uid in filled_ids:
             assert f'state="{expect_state}"' in target_open(after), (
                 f"unit {uid}: filled target has {target_open(after)!r}, "
@@ -325,7 +325,7 @@ def unit_sub(xml: str, uid: str, old: str, new: str) -> str:
 def test_meta_dropped_tag_is_caught() -> None:
     original = load(PLAIN_AR)
     filled, _ = fill(original, payload(AR_FILL))
-    broken = unit_sub(filled, "2", '<g id="2">10</g>', "")
+    broken = unit_sub(filled, "2", 'من <g id="2">10</g>', "من")
 
     with pytest.raises(AssertionError, match="inline tags differ"):
         assert_output_invariants(original, broken, set(AR_FILL))
