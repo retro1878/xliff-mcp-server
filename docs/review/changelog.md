@@ -74,3 +74,9 @@ All four changes are in `xliff_mcp/xliff_processor.py`; `tests/test_fill_invaria
 - **Files changed**: `.gitignore` (`out/`).
 - **Reason**: the filled file and the translation map are derived from a real customer document. They must never be committed; `out/` is ignored so an accidental `git add -A` cannot pick them up.
 - **Server behaviour changed**: none.
+
+### 2026-10-30 — import confirmed, documentation only
+
+- **Files changed**: `docs/review/tests.md` (owner's Smartcat import result), `docs/review/open-questions.md` (Q3 resolved, Q4 evidence).
+- **Reason**: the owner imported the filled file: 178 segments imported, 5 skipped as "Target text not changed" (the untouched TM segments), no errors.
+- **Server behaviour changed**: none.

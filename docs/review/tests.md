@@ -289,3 +289,20 @@ The five segments that already had translation (`[Logo]`, `[Signature]` ×3) wer
 - This is machine translation by a language model. It is not a certified translation and was not reviewed by an Arabic-speaking translator or a notary.
 - It has not been imported into Smartcat. That is the owner's acceptance step.
 - No check of Arabic typography beyond the structural checks above (no bidi-control characters were introduced by the tool; the translation text itself was written by the model).
+
+### Smartcat import result — reported by the repository owner
+
+The owner imported `out/filled-en-ar.xliff` into the same Smartcat project:
+
+```
+Successfully imported: 178
+Skipped: 5
+```
+
+Every skipped segment (`9216142`, `9216146`, `9216155`, `9216240`, `9216314`) was skipped with **"Target text not changed"** — they are the five segments Smartcat had already filled from translation memory, which this run deliberately left untouched. No errors were reported.
+
+This confirms, for this file and this Smartcat project:
+
+- the file was accepted (namespace, header, ids, attribute set intact);
+- the 178 filled targets were stored as translations, i.e. `state="translated"` was accepted;
+- leaving already-translated segments untouched produces "skipped", not an error.

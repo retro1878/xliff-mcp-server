@@ -14,17 +14,19 @@ Items needing a decision from the repository owner. Each states the default that
 
 **Consequence:** `tests/fixtures/smartcat-en-ar.xliff` is a structurally identical derivation of the supplied export: same 183 units, same ids, same attribute names and values for `state`, `xml:space`, `approved`, `sc:locked`, `sc:last-modified-date`; the only values changed are company names, officer names, FIN/NRIC-style identifiers, UENs, the notary number, the receipt number, the auditor name, the address and `sc:last-modified-user`. Verified equal on unit count, id list, attribute-name sets, tag skeletons, `<header>` bytes and `<file>` attributes (`/tmp/verify_anon2.py`, recorded in `tests.md`). The real file was deleted from the working tree and is not in git history.
 
-## Q3 — Which `state` should a filled target get?
+## Q3 — Which `state` should a filled target get? — **RESOLVED 2026-10-30**
 
-`translated` is the XLIFF 1.2 value for "has been translated" and is what Smartcat's own TM-filled segments carry. `needs-review-translation` would be defensible if these are machine translations needing review. `state-qualifier="mt-suggestion"` is the spec value for machine output, but Smartcat's imported files only ever show `exact-match`, so adding a qualifier may confuse the importer.
+**Answer:** `state="translated"`, as implemented.
 
-**Default if unanswered:** set `state="translated"`, leave every other target attribute untouched, do not add `state-qualifier`.
+**Evidence:** the owner imported a file with 178 segments set to `state="translated"` into the originating Smartcat project. Smartcat reported `Successfully imported: 178`, `Skipped: 5` (the five TM segments left untouched, reason "Target text not changed"), with no errors. Recorded in `tests.md`, Step 5.
 
 ## Q4 — Is setting `state` on a target that already has a translation acceptable?
 
 If a run is repeated over a file that already has `state="translated"` plus `state-qualifier="exact-match"` and `sc:match-quality="100"`, the new text overwrites TM provenance while those attributes stay. Options: (a) leave attributes alone but overwrite text, (b) strip `state-qualifier`/`sc:match-quality` when overwriting, (c) skip units already `translated` unless explicitly forced.
 
 **Default if unanswered:** (a). It is the smallest diff and the owner re-imports and confirms anyway; (b) and (c) are one-line additions if wanted later.
+
+**Evidence added 2026-10-30:** on re-import Smartcat skips targets whose text did not change ("Target text not changed"), so untouched TM segments are not re-stamped. Overwriting a TM segment with new text would still leave its `state-qualifier`/`sc:match-quality` in place, which is the case option (b) would fix.
 
 ## Q5 — How should translations be delivered: plain text or tagged markup?
 
