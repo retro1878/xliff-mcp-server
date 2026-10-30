@@ -83,3 +83,6 @@ cython_debug/
 
 # Local filled-file output (real customer documents, never committed)
 out/
+
+# Scratch folder exposed to the Claude Desktop filesystem server
+work/
