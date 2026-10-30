@@ -137,4 +137,67 @@ Re-ran `.\.venv\Scripts\pytest -v` (**82 passed, 1 warning**), `.\.venv\Scripts\
 
 All 12 findings are now fully covered.
 
+---
+
+## 5. Review of Post-Sign-Off Changes (`f1002c3..e31bd08` / `docs/review/change-report.md`)
+
+### 5.1 Independent Verification of Tests, Linter, and Claims
+
+| Check | Command Run | Actual Result | Claim in `change-report.md` |
+| :--- | :--- | :--- | :--- |
+| **Pytest suite** | `.\.venv\Scripts\pytest -v` | **87 passed, 1 warning** in `10.60s` (`+5` new tests in `tests/test_fill_invariants.py`) | Matches `change-report.md` §5 |
+| **Ruff linter** | `.\.venv\Scripts\ruff check .` | **All checks passed!** (`0` errors) | Matches `change-report.md` §5 |
+| **Ruff formatter** | `.\.venv\Scripts\ruff format --check ...` | **5 added test files pass** (`test_fill_invariants.py`, `test_diff_report.py`, `test_multi_file.py`, `test_schema_validation.py`, `test_review_regressions.py`). Note: modified upstream files (`tests/test_tools.py`, `xliff_mcp/tool_registry.py`, `xliff_mcp/xliff_processor.py`) still have pre-existing unformatted lines when checked as whole files. | Matches `tests.md` (Step 9) |
+| **MCP tool descriptions (`912cd35`)** | `asyncio.run(mcp.list_tools())` | **10/10 tools** now expose non-empty `description` strings matching the docstrings in `xliff_mcp/tool_registry.py:82-391` | Matches `change-report.md` §2 (Change A) |
+| **`.gitignore` (`4631bc9`)** | `git diff f1002c3..HEAD -- .gitignore` | `work/` added alongside `out/` | Verified |
+
+---
+
+### 5.2 Findings on Change B (`3898af4` — `require_tags` & `skipped_count`)
+
+#### 13. `_tags_match_source` does not call `_split_alt_trans` and fails on self-closing `<source/>` (`Medium`)
+- **Location:** `xliff_mcp/xliff_processor.py:872-879` (`_tags_match_source`)
+- **Bug:** Unlike `_extract_element_content` (`:334`), `_fill_target` (`:628`), and `_target_parts` (`:757`), `_tags_match_source` searches raw `unit_content` directly with `SOURCE_ELEMENT = re.compile(r"<source\b[^>]*>[\s\S]*?</source>")` without first calling `_split_alt_trans(unit_content)` or checking for a self-closing `<source/>`.
+- **Reproduced:** If a unit has a self-closing `<source/>` followed by `<alt-trans><source>Old <g id="1">tag</g></source>...</alt-trans>`, `SOURCE_ELEMENT.search(unit_content)` spans from `<source/>` across into `<alt-trans>`'s `</source>`, extracts `<g id="1">` from the `<alt-trans>` source, and wrongly rejects an untagged translation (`replacements_count == 0`).
+- **Fix:** Split before `<alt-trans>` first (`unit_body, _ = _split_alt_trans(unit_content)`), and ignore self-closing `<source .../>` before searching with `SOURCE_ELEMENT` (matching `_extract_element_content`).
+
+#### 14. `_tag_skeleton` enforces strict tag ordering, so `require_tags=True` rejects valid target-language tag reordering (`Medium`)
+- **Location:** `xliff_mcp/xliff_processor.py:806-830` (`_tag_skeleton`) and `xliff_mcp/xliff_processor.py:872-879` (`_tags_match_source`)
+- **Issue:** Noted as untested in `change-report.md` §6. Because `_tag_skeleton` returns an ordered `List[str]`, `_tags_match_source` requires inline tags to appear in the exact source order. In EN→AR/FA translation, grammatical word-order differences routinely require swapping two standalone placeholders or sibling `<g>` spans (e.g., `<source>From <x id="1"/> to <x id="2"/></source>` → `'إلى <x id="2"/> من <x id="1"/>'`).
+- **Reproduced:** `XliffProcessorService.replace_xliff_targets` with `require_tags=True` rejects `'إلى <x id="2"/> من <x id="1"/>'` (`count == 0`) even though both tags are present, well-formed, and properly closed.
+- **Recommendation:** While structural nesting and open/close pairing are already enforced by `_render_fragment` (which parses `<r>{text}</r>` via `lxml`), `_tags_match_source` should either compare the multiset (`Counter`) of tags (whilst still ensuring each paired `<g id="k">...</g>` wraps content rather than becoming self-closing) or document clearly that tag reordering requires `require_tags=False`.
+
+#### 15. Round-trip mismatch when `<source>` contains escaped literal inline-tag syntax (`&lt;x id="1"/&gt;`) (`Low / Edge Case`)
+- **Location:** `xliff_mcp/xliff_processor.py:723-726` (`_unescape_text_runs`) and `xliff_mcp/xliff_processor.py:872-879` (`_tags_match_source`)
+- **Bug:** If a `<source>` contains literal escaped XML documentation text that looks like an XLIFF inline tag (e.g., `<source>Write &lt;x id="1"/&gt; in the file</source>`), `_tags_match_source` inspects the raw XML `inner` string (where `&lt;x id="1"/&gt;` is escaped text, so `_tag_skeleton(inner)` is `[]`). However, `process_xliff_with_tags` runs `_unescape_text_runs`, returning `'Write <x id="1"/> in the file'`. When the translator preserves that string and passes it back to `replace_xliff_targets`, `_render_fragment` treats `<x id="1"/>` as a real XML tag (`_tag_skeleton(rendered)` is `['x[1|/]']`), and `_tags_match_source` rejects the translation because `[] != ['x[1|/]']` (or, with `require_tags=False`, converts the escaped text into a real XML element).
+
+#### 16. `skipped_count = len(translations_data) - replacements_count` conflates four distinct skip reasons (`Medium`)
+- **Location:** `xliff_mcp/tool_registry.py:166-178` (`replace_xliff_targets`)
+- **Issue:** Subtracting `replacements_count` from `len(translations_data)` counts all of the following as `skipped_count` with the single message `"(no matching unit, or the inline tags differed from the source)"`:
+  1. A translation rejected by `_tags_match_source` (`require_tags=True`).
+  2. An entry with an unknown `unitId` or out-of-range `segNumber`.
+  3. An entry with an empty `aiResult`/`mtResult` (`""`).
+  4. Duplicate `segNumber` entries in `translations_data` (where `wanted_by_position[int(seg_number)] = new_text` overwrites the earlier entry).
+- **Reproduced:** Sending 4 entries (`1` unmatched `unitId`, `1` empty `aiResult`, and `2` entries with `segNumber=1` and valid tags) produces `replacements_count: 1, skipped_count: 3` even though zero units failed the tag check.
+
+---
+
+### 5.3 Answers to Reviewer Questions (`docs/review/change-report.md` §7)
+
+1. **Where should `require_tags` live, and should it default to `True` in both `XliffProcessorService.replace_xliff_targets` and the MCP tool?**
+   - **Yes — keep `require_tags: bool = True` as the default in both `XliffProcessorService.replace_xliff_targets` and the MCP tool.**
+   - Protecting against stripped inline tags is a core invariant of XLIFF target replacement (broken tags corrupt CAT tool re-imports just like unescaped `&`), so direct Python callers and tests benefit from the same safe default as MCP tool callers, while `require_tags=False` provides an explicit opt-out.
+
+2. **How should a skipped unit be reported in `diff_report` vs. `replace_xliff_targets`?**
+   - **Keep `diff_report` pure (comparing only `original_content` vs. `filled_content`)** — `diff_xliff_report` is also a standalone MCP tool (`tool_registry.py:194-224`) that does not receive the `translations` payload, so it cannot know which untouched units were intentionally omitted from the payload versus skipped due to a tag mismatch.
+   - **Report skipped units directly in `replace_xliff_targets`** by having `XliffProcessorService.replace_xliff_targets` track which translation entries were skipped and why.
+
+3. **Should the skip reason be machine-checkable instead of only prose in `message`?**
+   - **Yes.** Have `replace_xliff_targets` return a structured `skipped_units` list in the JSON response (and optionally from the service method or a helper), where each item records:
+     ```json
+     {"unit_id": "2", "seg_number": 2, "reason": "tags_mismatch"}
+     ```
+     with distinct `reason` codes (e.g., `"tags_mismatch"`, `"unit_not_found"`, `"empty_translation"`, `"duplicate_target"`). That way an MCP client can immediately see *which* unit failed tag validation and retry just that segment without guessing from `skipped_count`.
+
+
 

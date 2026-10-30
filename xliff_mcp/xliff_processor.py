@@ -370,41 +370,69 @@ class XliffProcessorService:
     def replace_xliff_targets(
         content: str, translations: List[dict], require_tags: bool = True
     ) -> Tuple[str, int]:
+        """Replace target content; see replace_xliff_targets_detailed."""
+        result = XliffProcessorService.replace_xliff_targets_detailed(
+            content, translations, require_tags=require_tags
+        )
+        return result["content"], result["replacements_count"]
+
+    @staticmethod
+    def replace_xliff_targets_detailed(
+        content: str, translations: List[dict], require_tags: bool = True
+    ) -> dict:
         """
-        Replace target content in XLIFF file using string replacement
+        Replace target content in XLIFF and report every translation not applied.
 
         Only the content of <target> and its state attribute are written; every
-        other byte of the document is preserved.
+        other byte of the document is preserved. With require_tags (the
+        default), a target may only use inline tags the source has, and a
+        translation whose tags do not match is not written at all.
 
         Args:
             content: Original XLIFF file content
-            translations: List of translation data with segNumber, aiResult, mtResult
-            require_tags: With the default True, a translation whose inline tags
-                do not match the source's is not written at all, so a placeholder
-                can never be lost silently. Pass False to write it anyway.
+            translations: List of {segNumber or unitId, aiResult or mtResult}
+            require_tags: Skip a translation whose tags do not match the source
 
         Returns:
-            (updated_content, replacement_count)
+            {"content": str, "replacements_count": int, "skipped_units": [
+                {"unit_id", "seg_number", "reason"}]}
+            where reason is empty_translation, duplicate_target,
+            unit_not_found or tags_mismatch.
         """
-        wanted_by_id: dict[str, list[str]] = {}
-        wanted_by_position: dict[int, str] = {}
+        entries: list[dict] = []
+        by_position: dict[int, dict] = {}
+        by_id: dict[str, list[dict]] = {}
+
         for translation in translations:
             new_text = translation.get('aiResult') or translation.get('mtResult')
+            entry = {
+                "unit_id": translation.get('unitId'),
+                "seg_number": translation.get('segNumber'),
+                "text": new_text,
+                "applied": False,
+                "reason": None,
+            }
+            entries.append(entry)
             if not new_text:
+                entry["reason"] = "empty_translation"
                 continue
-            unit_id = translation.get('unitId')
-            seg_number = translation.get('segNumber')
-            # A position wins over an id: with repeated ids across <file>
-            # elements the id alone cannot say which unit was meant, and
-            # queueing the same text under both keys would fill a second unit.
-            if seg_number is not None:
+
+            position = None
+            if entry["seg_number"] is not None:
                 try:
-                    wanted_by_position[int(seg_number)] = new_text
-                    continue
+                    position = int(entry["seg_number"])
                 except (TypeError, ValueError):
-                    pass
-            if unit_id:
-                wanted_by_id.setdefault(str(unit_id), []).append(new_text)
+                    position = None
+            if position is not None:
+                # A position wins over an id, and the last entry wins.
+                previous = by_position.get(position)
+                if previous is not None:
+                    previous["reason"] = "duplicate_target"
+                by_position[position] = entry
+            elif entry["unit_id"]:
+                by_id.setdefault(str(entry["unit_id"]), []).append(entry)
+            else:
+                entry["reason"] = "unit_not_found"
 
         replacements_count = 0
         position = 0
@@ -414,29 +442,46 @@ class XliffProcessorService:
             position += 1
             unit_start, unit_content, unit_end = match.groups()
 
-            # segNumber is a document-wide position, so it stays correct when the
-            # same unit id appears in more than one <file>.
-            text = wanted_by_position.get(position)
-            if text is None:
-                queued = wanted_by_id.get(_unit_id(unit_start) or "")
-                if queued:
-                    text = queued.pop(0)
-            if text is None:
+            entry = by_position.get(position)
+            if entry is None:
+                queue = by_id.get(_unit_id(unit_start) or "")
+                entry = queue.pop(0) if queue else None
+            if entry is None or entry["applied"] or entry["reason"]:
                 return match.group(0)
 
-            rendered = _render_fragment(text)
+            rendered = _render_fragment(
+                entry["text"], allowed=_source_tag_set(unit_content)
+            )
             if require_tags and not _tags_match_source(unit_content, rendered):
+                entry["reason"] = "tags_mismatch"
                 return match.group(0)
 
             new_unit_content, changed = _fill_target(unit_content, rendered)
             if not changed:
+                entry["reason"] = "unit_not_found"
                 return match.group(0)
 
+            entry["applied"] = True
             replacements_count += 1
             return unit_start + new_unit_content + unit_end
 
         updated_content = UNIT_ELEMENT.sub(rewrite, content)
-        return updated_content, replacements_count
+
+        skipped_units = [
+            {
+                "unit_id": entry["unit_id"],
+                "seg_number": entry["seg_number"],
+                "reason": entry["reason"] or "unit_not_found",
+            }
+            for entry in entries
+            if not entry["applied"]
+        ]
+
+        return {
+            "content": updated_content,
+            "replacements_count": replacements_count,
+            "skipped_units": skipped_units,
+        }
 
     @staticmethod
     def diff_report(original: str, filled: str) -> dict:
@@ -641,8 +686,10 @@ def _fill_target(unit_content: str, rendered: str) -> Tuple[str, bool]:
         return new_head + tail, True
 
     # No target yet: place it after seg-source when present, else after source.
-    anchor = re.search(r"</seg-source>", head, re.IGNORECASE) or re.search(
-        r"</source>", head, re.IGNORECASE
+    anchor = (
+        re.search(r"</seg-source>", head, re.IGNORECASE)
+        or re.search(r"</source>", head, re.IGNORECASE)
+        or re.search(r"<source\b[^>]*/>", head, re.IGNORECASE)
     )
     if anchor is None:
         return unit_content, False
@@ -652,13 +699,16 @@ def _fill_target(unit_content: str, rendered: str) -> Tuple[str, bool]:
     return head[:position] + new_target + head[position:] + tail, True
 
 
-def _render_fragment(text: str) -> str:
+def _render_fragment(text: str, allowed: set[str] | None = None) -> str:
     """Escape text while keeping well-formed XLIFF inline tags.
 
     Each candidate tag must parse as XML on its own and the kept tags must nest
     correctly. Anything else -- a stray '<' left by html.unescape, an illegal
     attribute, an unclosed or mismatched tag -- stays text and is escaped, so
-    the result is always well-formed XML.
+    the result is always well-formed XML. When `allowed` is given, a tag the
+    source does not have is treated as text too: a translation can never
+    introduce markup, and literal '<tag>' written in the source text stays
+    literal.
     """
     parser = etree.XMLParser(resolve_entities=False, no_network=True)
     kept: list[re.Match[str]] = []
@@ -666,6 +716,10 @@ def _render_fragment(text: str) -> str:
         closing, name, _, self_closing = match.groups()
         if name.split(":")[-1] not in INLINE_ELEMENTS:
             continue
+        if allowed is not None:
+            tokens = _tag_skeleton(match.group(0))
+            if not tokens or tokens[0] not in allowed:
+                continue
         if self_closing:
             candidate = f"<r>{match.group(0)}</r>"
         elif closing:
@@ -869,11 +923,31 @@ def _strip_extensions(tree: etree._ElementTree) -> dict[str, int]:
     return ignored
 
 
-def _tags_match_source(unit_content: str, rendered: str) -> bool:
-    """True when the rendered target carries the same inline tags as the source."""
-    source_match = SOURCE_ELEMENT.search(unit_content)
+def _source_fragment(unit_content: str) -> str:
+    """Inner XML of the unit's own <source>, ignoring <alt-trans>."""
+    body, _ = _split_alt_trans(unit_content)
+    source_match = SOURCE_ELEMENT.search(body)
     if source_match is None:
-        return True
+        return ""
     element = source_match.group(0)
-    inner = element[element.index(">") + 1 : element.rindex("<")]
-    return _tag_skeleton(inner) == _tag_skeleton(rendered)
+    opening_end = element.index(">")
+    if element[:opening_end].endswith("/"):
+        return ""
+    return element[opening_end + 1 : element.rindex("<")]
+
+
+def _source_tag_set(unit_content: str) -> set[str]:
+    """The inline tag tokens the source actually uses."""
+    return set(_tag_skeleton(_source_fragment(unit_content)))
+
+
+def _tags_match_source(unit_content: str, rendered: str) -> bool:
+    """True when the rendered target carries the same inline tags as the source.
+
+    The multiset is compared, not the order: a translation may legitimately
+    swap placeholders when the word order changes. Identity, ctype, pairing and
+    self-closing form are compared.
+    """
+    return Counter(_tag_skeleton(_source_fragment(unit_content))) == Counter(
+        _tag_skeleton(rendered)
+    )

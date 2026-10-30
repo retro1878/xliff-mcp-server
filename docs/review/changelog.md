@@ -145,3 +145,13 @@ All four changes are in `xliff_mcp/xliff_processor.py`; `tests/test_fill_invaria
 - **How**: before writing, the rendered target's tag skeleton is compared with the source's. On a mismatch the unit is left untouched (still `needs-translation`) and counted as skipped. `require_tags=False` restores the old behaviour.
 - **Not added, deliberately**: no alignment of free-form translated documents to segments, and no automatic re-insertion of tags into tagless translations. Both need language understanding; they stay with the agent, which already receives the source segments with their tags.
 - **Result**: `87 passed`.
+
+## Step 11 — review round 3
+
+### 2026-10-30 — structured skip report, tag matching by multiset
+
+- **Answers accepted**: `require_tags` stays default-`True`; `diff_report` stays a pure comparison; the fill itself reports which translations were skipped and why.
+- **Files changed**: `xliff_mcp/xliff_processor.py` (`replace_xliff_targets_detailed`, `_source_fragment`, `_source_tag_set`, multiset `_tags_match_source`, `_render_fragment(..., allowed)`, `_fill_target` anchor for self-closing source), `xliff_mcp/tool_registry.py` (`skipped_units`, message summary), `README.md`, skills, tests.
+- **Why**: findings 13–16 of `review-findings.md` §5.
+- **Behaviour**: tags may be reordered (languages change word order); a tag the source does not have is escaped rather than written; skip reasons are machine-readable.
+- **Result**: `93 passed`.

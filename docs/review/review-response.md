@@ -88,3 +88,37 @@ Tests added for these: `test_tag_attribute_entities_survive_round_trip`, `test_c
 .venv/Scripts/ruff check .            All checks passed!
 md5 out/filled-en-ar.xliff            580dc6f6ff35f495ae44fa33e751edfe  (unchanged)
 ```
+
+## Round 3 — Argon's review of the post-sign-off work (`review-findings.md` §5)
+
+### Answers accepted
+
+| Question | Answer | What changed |
+| --- | --- | --- |
+| Default of `require_tags` | Keep `True` in both the service and the tool | none — already the case |
+| Where skips are reported | Keep `diff_report` pure; report skips from `replace_xliff_targets` | `diff_report` untouched; the fill now reports them |
+| Machine-checkable reasons | Yes, structured `skipped_units` | `replace_xliff_targets_detailed()` + `skipped_units` in the tool response |
+
+`skipped_units` is a list of `{"unit_id", "seg_number", "reason"}`, with `reason` one of `empty_translation`, `duplicate_target`, `unit_not_found`, `tags_mismatch`. `skipped_count` is now its length, and the message summarises the reasons (`2 skipped (tags_mismatch: 1, unit_not_found: 1)`).
+
+### Findings
+
+| # | Finding | Verdict | Fix |
+| --- | --- | --- | --- |
+| 13 | `_tags_match_source` ignores `<alt-trans>` and self-closing `<source/>` | Confirmed, fixed | new `_source_fragment()` splits at `<alt-trans>` and treats a self-closing source as empty; `_fill_target` also anchors on a self-closing `<source/>` |
+| 14 | Strict tag ordering rejects legitimate translations | Confirmed, fixed | the comparison is now a `Counter` over the tag skeleton: order may change, identity/ctype/pairing/self-closing may not |
+| 15 | Escaped literal tag syntax in source text round-trips into real markup | Confirmed, fixed | `_render_fragment(text, allowed=source_tags)` treats any tag the source does not have as text, so a translation can never introduce markup |
+| 16 | `skipped_count` conflates four reasons | Confirmed, fixed | per-entry reasons, as above |
+
+Finding 15's fix also closes a related hole nobody reported: a hallucinated tag such as `<g id="9">` in a translation is now escaped as text instead of written into the target.
+
+```
+.venv/Scripts/python -m pytest -q     93 passed
+.venv/Scripts/ruff check .            All checks passed!
+```
+
+Six new tests in `tests/test_review_regressions.py` cover 13–16 and the structured report.
+
+### One behaviour to note
+
+Because only source tags are allowed, a translation may no longer *add* markup. That is intended, but it means a caller who was relying on the fill to format text (for example wrapping a term in `<g>`) will now get the tags escaped. No such caller exists in this repository.

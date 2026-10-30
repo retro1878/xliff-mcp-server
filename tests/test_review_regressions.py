@@ -308,3 +308,104 @@ def test_process_xliff_reads_languages_per_file() -> None:
     assert [
         unit.tgtLang for unit in XliffProcessorService.process_xliff("x", TWO_FILES)
     ] == ["ar", "ar", "fa"]
+
+
+# Round 3 -------------------------------------------------------------------
+def test_self_closing_source_with_alt_trans_is_filled() -> None:
+    source = one_unit(
+        '<source/><alt-trans><source>Old <g id="1">tag</g></source>'
+        "<target>old</target></alt-trans>"
+    )
+
+    filled, count = XliffProcessorService.replace_xliff_targets(
+        source, [{"unitId": "1", "aiResult": "نص"}]
+    )
+
+    assert count == 1
+    assert target_of(filled) == "نص"
+    assert filled.index('<target state="translated">نص</target>') < filled.index(
+        "<alt-trans>"
+    )
+
+
+def test_reordered_placeholders_are_accepted() -> None:
+    source = one_unit(
+        '<source>From <x id="1"/> to <x id="2"/></source>'
+        '<target state="needs-translation"></target>'
+    )
+    translated = 'إلى <x id="2"/> من <x id="1"/>'
+
+    filled, count = XliffProcessorService.replace_xliff_targets(
+        source, [{"unitId": "1", "aiResult": translated}]
+    )
+
+    assert count == 1
+    assert target_of(filled) == translated
+
+
+def test_literal_tag_syntax_in_source_text_stays_text() -> None:
+    source = one_unit(
+        '<source>Write &lt;x id="1"/&gt; in the file</source>'
+        '<target state="needs-translation"></target>'
+    )
+    extracted = XliffProcessorService.process_xliff_with_tags("x", source)[0].source
+
+    filled, count = XliffProcessorService.replace_xliff_targets(
+        source, [{"unitId": "1", "aiResult": extracted}]
+    )
+
+    assert count == 1
+    assert target_of(filled) == 'Write &lt;x id="1"/&gt; in the file'
+
+
+def test_skipped_units_report_distinct_reasons() -> None:
+    source = one_unit(
+        '<source>Alpha</source><target state="needs-translation"></target>'
+    )
+
+    result = XliffProcessorService.replace_xliff_targets_detailed(
+        source,
+        [
+            {"unitId": "nope", "aiResult": "x"},
+            {"segNumber": 1, "unitId": "1", "aiResult": ""},
+            {"segNumber": 1, "unitId": "1", "aiResult": "ألفا"},
+            {"segNumber": 1, "unitId": "1", "aiResult": "بيتا"},
+        ],
+    )
+
+    assert result["replacements_count"] == 1
+    assert [unit["reason"] for unit in result["skipped_units"]] == [
+        "unit_not_found",
+        "empty_translation",
+        "duplicate_target",
+    ]
+
+
+def test_tag_mismatch_is_reported_as_its_own_reason() -> None:
+    source = one_unit(
+        '<source><g id="1">x</g></source><target state="needs-translation"></target>'
+    )
+
+    result = XliffProcessorService.replace_xliff_targets_detailed(
+        source, [{"unitId": "1", "aiResult": "نص"}]
+    )
+
+    assert result["replacements_count"] == 0
+    assert result["skipped_units"][0]["reason"] == "tags_mismatch"
+
+
+def test_tool_returns_structured_skips() -> None:
+    import json
+
+    from xliff_mcp.server import replace_xliff_targets as tool
+
+    source = one_unit(
+        '<source><g id="1">x</g></source><target state="needs-translation"></target>'
+    )
+
+    result = json.loads(tool(source, json.dumps([{"unitId": "1", "aiResult": "نص"}])))
+
+    assert result["skipped_count"] == 1
+    assert result["skipped_units"] == [
+        {"unit_id": "1", "seg_number": None, "reason": "tags_mismatch"}
+    ]

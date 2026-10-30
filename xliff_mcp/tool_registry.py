@@ -163,25 +163,31 @@ def register_tools(
             if not isinstance(translations_data, list):
                 translations_data = [translations_data]
 
-            updated_content, replacements_count = xliff_service.replace_xliff_targets(
+            result = xliff_service.replace_xliff_targets_detailed(
                 content, translations_data, require_tags=require_tags
             )
-            skipped_count = len(translations_data) - replacements_count
+            updated_content = result["content"]
+            replacements_count = result["replacements_count"]
+            skipped_units = result["skipped_units"]
             message = (
                 f"Successfully replaced {replacements_count} of "
                 f"{len(translations_data)} translations"
             )
-            if skipped_count:
-                message += (
-                    f"; {skipped_count} skipped (no matching unit, or the inline "
-                    "tags differed from the source)"
+            if skipped_units:
+                counts: dict[str, int] = {}
+                for unit in skipped_units:
+                    counts[unit["reason"]] = counts.get(unit["reason"], 0) + 1
+                summary = ", ".join(
+                    f"{reason}: {count}" for reason, count in sorted(counts.items())
                 )
+                message += f"; {len(skipped_units)} skipped ({summary})"
             return _dump_json({
                 "success": True,
                 "message": message,
                 "content": updated_content,
                 "replacements_count": replacements_count,
-                "skipped_count": skipped_count,
+                "skipped_count": len(skipped_units),
+                "skipped_units": skipped_units,
                 "diff_report": xliff_service.diff_report(content, updated_content),
             })
         except json.JSONDecodeError as error:

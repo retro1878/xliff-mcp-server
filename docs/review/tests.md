@@ -461,3 +461,23 @@ Five new tests: a tagless translation for a tagged segment is skipped (`count 0`
 The existing suite covers the positive path: all 178 segments of the real export carry their tags, and the Smartcat fixture still fills 7/7 with no issues.
 
 Not run: no re-import into Smartcat after this change (the behaviour for tag-correct translations is unchanged — verified by the fixture test, not by import).
+
+## Step 11 (2026-10-30) — review round 3
+
+Reproduced with `/tmp/verify_argon3.py` before the fixes (all four printed `count: 0` or conflated reasons). After:
+
+```
+#13 self-closing source + alt-trans  count: 1
+#14 reordered placeholders           count: 1 | target: إلى <x id="2"/> من <x id="1"/>
+#15 literal <x id="1"/> in text      count: 1 | target: Write &lt;x id="1"/&gt; in the file
+#16 reasons                          [unit_not_found, empty_translation, duplicate_target]
+```
+
+```
+.venv/Scripts/python -m pytest -q     93 passed, 1 warning
+.venv/Scripts/ruff check .            All checks passed!
+```
+
+Six new tests; no existing test changed.
+
+Not run: no re-import into Smartcat after these changes; no test of a translation that adds a tag the source lacks (covered by the renderer's `allowed` filter in one direction only).

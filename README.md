@@ -107,9 +107,9 @@ Replace target translations in XLIFF file.
 - `translations` (string): JSON array of translations with segNumber/unitId and aiResult/mtResult
 
 **Parameters (additional):**
-- `require_tags` (boolean, default `true`): a translation whose inline tags do not match the source's is **not written**; it is counted in `skipped_count` instead. Pass `false` to write it anyway.
+- `require_tags` (boolean, default `true`): a translation whose inline tags do not match the source's is **not written**. Order may change; tag identity, `ctype`, pairing and self-closing form may not, and a tag the source does not have is treated as text. Pass `false` to write it anyway.
 
-**Returns:** JSON with updated XLIFF content, `replacements_count`, `skipped_count`, and a `diff_report` (see `diff_xliff_report`).
+**Returns:** JSON with updated XLIFF content, `replacements_count`, `skipped_count`, `skipped_units` (each `{unit_id, seg_number, reason}` where reason is `empty_translation`, `duplicate_target`, `unit_not_found` or `tags_mismatch`), and a `diff_report` (see `diff_xliff_report`).
 
 ### diff_xliff_report
 Compare an original and a filled XLIFF document and report every unit whose target changed, plus any difference in unit count, unit ids, source bytes, unit attributes, target state or inline tags.
