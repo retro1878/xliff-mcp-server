@@ -66,3 +66,11 @@ All four changes are in `xliff_mcp/xliff_processor.py`; `tests/test_fill_invaria
 - **Automatic**: `replace_xliff_targets` now includes `diff_report` in its JSON response, so the report runs on every replacement without a second call. The standalone tool exists for files filled elsewhere.
 - **Contract change**: additive only. `replace_xliff_targets` keeps `content` and `replacements_count`; the response gains one key.
 - **Not done**: the report does not verify XLIFF 1.2 schema order and does not check bidi control characters.
+
+## Step 5 — deliverable for the owner's Smartcat test
+
+### 2026-10-30 — local output directory
+
+- **Files changed**: `.gitignore` (`out/`).
+- **Reason**: the filled file and the translation map are derived from a real customer document. They must never be committed; `out/` is ignored so an accidental `git add -A` cannot pick them up.
+- **Server behaviour changed**: none.

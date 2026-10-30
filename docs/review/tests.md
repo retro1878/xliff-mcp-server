@@ -244,3 +244,48 @@ This is a structural fill with placeholder Arabic, not a translation-quality tes
 - No human-quality translation of the Smartcat file; the 178 filled segments above are placeholder text.
 - No re-import into Smartcat (owner's acceptance step).
 - The report was not tested against a document with duplicate `id` values across several `<file>` elements (Q7).
+
+## Step 5 (2026-10-30) — real fill of the supplied ACRA export
+
+The owner asked for the supplied export to be translated, to re-import into Smartcat themselves. The source file was copied to `out/source-en-ar.xliff` (untracked; `out/` added to `.gitignore`). The repository fixtures are unaffected.
+
+### What was run
+
+```
+.venv/Scripts/python -I /tmp/dump_segments.py     # extract the 178 empty segments
+.venv/Scripts/python -I /tmp/fill_real.py         # fill + diff report + write out/filled-en-ar.xliff
+.venv/Scripts/python -I /tmp/verify_real.py       # independent checks on the result
+```
+
+### Result
+
+```
+segments: 178 | unique: 119 | untranslated sources: 0
+replacements: 178 | changed: 178 | issues: 0
+counts: 183 -> 183 match: True
+validate: (True, 'XLIFF format is valid', 183)
+
+outside-target identical: True
+empty targets: []
+state counts: 183 translated / 0 needs
+bytes: 45413 -> 49834
+```
+
+29 targets still contain Latin tokens; every one was checked by hand and is intentional: `ACRA`, `(ACRA)`, `<notary number>`, the UEN/FIN/NRIC identifiers, the abbreviation codes `UL/UF/AR/AGM/FS/FYE`, `OpenAttestation`, `Business_Profile.oa`, the verification URL, and the receipt number.
+
+37 targets are byte-identical to their source. They are the `:` separators, the identifier strings, the abbreviation codes and `ACRA` — nothing that can be translated.
+
+The five segments that already had translation (`[Logo]`, `[Signature]` ×3) were not in the payload and came back byte-identical, including `state-qualifier="exact-match"` and `sc:match-quality="100"`.
+
+### Translation choices (not verified by anyone but the author)
+
+- Proper names are transliterated into Arabic: <company>, <parent company>, <auditor>, and the four officer names.
+- Identifiers are left in Latin exactly as issued: UENs, FIN/NRIC numbers, notary number, receipt number, clearance codes.
+- Dates keep the source's digits and use Arabic month names (`19 أكتوبر 2026`).
+- `ACRA` stays Latin next to its Arabic expansion.
+
+### Not run / not verified
+
+- This is machine translation by a language model. It is not a certified translation and was not reviewed by an Arabic-speaking translator or a notary.
+- It has not been imported into Smartcat. That is the owner's acceptance step.
+- No check of Arabic typography beyond the structural checks above (no bidi-control characters were introduced by the tool; the translation text itself was written by the model).
