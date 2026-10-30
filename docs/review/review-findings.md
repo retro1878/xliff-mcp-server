@@ -122,3 +122,19 @@ Executed `.\.venv\Scripts\pytest -v` (**77 passed, 1 warning**), `.\.venv\Script
 | **11** | Confidential customer data in `docs/review/` and `out/` | **Mostly covered** | Scrubbed from `docs/review/tests.md` and git history (`git filter-branch` in `cff05e7`; `git log --all -S` for the company/user/auditor strings is now clean, and `backup/pre-scrub` was already deleted despite `changelog.md:110` saying it still exists). Note: `docs/review/tests.md:399` and `review-response.md:18,39` still contain stale notes saying history was not rewritten, and `out/` still holds the un-anonymized customer files on disk. |
 | **12** | `README.md` floor, `ruff format` rule, & `auth.py` | **Partially covered** | `README.md:244` was updated to `translate-toolkit >= 3.20.1` (`auth.py` intentionally left out of scope). However, the newly added `tests/test_review_regressions.py` (along with `tests/test_diff_report.py` and `tests/test_multi_file.py`) still fails `ruff format --check`, violating `AGENTS.md:16`. |
 
+---
+
+## 4. Round 2 Re-Verification — Final Sign-Off (`HEAD` at `f1002c3`)
+
+Re-ran `.\.venv\Scripts\pytest -v` (**82 passed, 1 warning**), `.\.venv\Scripts\ruff check .` (**All checks passed!**), `.\.venv\Scripts\ruff format --check` on all 5 added test files (**5 files already formatted**), and the reproduction script against `f1002c3`:
+
+- **Finding #3 (Inline tag attribute entities on round-trip) — Covered:** `_unescape_text_runs` (`xliff_mcp/xliff_processor.py:708-711`) now unescapes only text runs between tags, keeping entities inside tag attributes intact (`<ph id="1" equiv-text="A &amp; B"/>` round-trips cleanly with `0` diff issues).
+- **Finding #4 (Closing tags with attributes in `_render_fragment`) — Covered:** `_render_fragment` (`xliff_mcp/xliff_processor.py:664-667`) now requires closing tags to match `rf"</\s*{re.escape(name)}\s*>"` via `re.fullmatch`, escaping malformed closing tags such as `</g id="1">` so the output remains valid XML.
+- **Finding #6 (`<alt-trans>` in `_extract_element_content` and `_target_parts`) — Covered:** Both `_extract_element_content` (`xliff_mcp/xliff_processor.py:334`) and `_target_parts` (`xliff_mcp/xliff_processor.py:757`) now call `_split_alt_trans`, preventing `<alt-trans><target>` from being read as the unit's own target or triggering false attribute diff issues.
+- **Finding #10 (`process_xliff` multi-`<file>` languages) — Covered:** `process_xliff` (`xliff_mcp/xliff_processor.py:60-61, 81, 118-125`) now resolves per-unit languages via `_languages_in_unit_order(content)` by document position, returning `[('en', 'ar'), ('en', 'ar'), ('en', 'fa')]` on `TWO_FILES`.
+- **Finding #11 (`out/` directory and stale history notes) — Covered:** `out/` has been removed from disk (`Test-Path out` is `False`), and the stale notes in `docs/review/{changelog,tests,review-response}.md` have been updated.
+- **Finding #12 (`ruff format` on added test files) — Covered:** All five test files added in this fork (`test_fill_invariants.py`, `test_diff_report.py`, `test_multi_file.py`, `test_schema_validation.py`, `test_review_regressions.py`) pass `ruff format --check`.
+
+All 12 findings are now fully covered.
+
+
