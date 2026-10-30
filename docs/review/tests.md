@@ -306,3 +306,47 @@ This confirms, for this file and this Smartcat project:
 - the file was accepted (namespace, header, ids, attribute set intact);
 - the 178 filled targets were stored as translations, i.e. `state="translated"` was accepted;
 - leaving already-translated segments untouched produces "skipped", not an error.
+
+## Step 6 (2026-10-30) — Q6, Q7, Q8
+
+### Commands and results
+
+```
+.venv/Scripts/python -m pytest -q
+61 passed, 1 warning in 8.20s
+
+.venv/Scripts/ruff check .
+All checks passed!
+```
+
+Wheel contents (built with `pip wheel . --no-deps`):
+
+```
+xliff_mcp/schemas/xliff-core-1.2-strict.xsd
+```
+
+### Q8 evidence
+
+`get_safe_xml_parser` fetched from `raw.githubusercontent.com/translate/translate/<tag>/translate/misc/xml_helpers.py` for tags 3.19.0, 3.19.1, 3.19.2, 3.19.3 (absent) and 3.19.4 (present). `pyproject.toml` now requires `translate-toolkit>=3.20.1`. No other version was installed or run.
+
+### Q6 evidence
+
+`schema_check` on the real export: `valid: True`, `error_count: 0`, ignored `x-state-qualifier`, `{SmartcatXliff}last-modified-date`, `{SmartcatXliff}last-modified-user`, `{SmartcatXliff}locked`, `{SmartcatXliff}match-quality`. On plain fixtures: valid with nothing ignored. On a document missing `<source>` or carrying `state="bogus"`: invalid.
+
+### Q7 evidence
+
+Six tests cover: `segNumber` addressing across two `<file>` elements that both use ids `1` and `2`; two translations for duplicate id `1` filling the first and third units; one translation touching a single unit; the report flagging duplicates and id reordering.
+
+### Regression
+
+Re-running the real fill after the Q7 rewrite produced a byte-identical file:
+
+```
+580dc6f6ff35f495ae44fa33e751edfe *out/filled-en-ar.xliff   (before)
+580dc6f6ff35f495ae44fa33e751edfe *out/filled-en-ar.xliff   (after)
+```
+
+### Not run
+
+- No test against translate-toolkit 3.19.4–3.20.0.
+- No schema validation of SDLXLIFF beyond the existing `SDL_XLIFF` sample (which passes with `sdl:seg-defs` ignored).

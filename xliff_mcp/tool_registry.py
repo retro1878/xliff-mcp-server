@@ -126,10 +126,14 @@ def register_tools(
 
         try:
             valid, message, unit_count = xliff_service.validate_xliff(content)
+            schema = xliff_service.schema_check(content)
             return _dump_json({
                 "valid": valid,
                 "message": message,
                 "unit_count": unit_count,
+                "schema_valid": schema["valid"],
+                "schema_errors": schema["errors"],
+                "ignored_extensions": schema["ignored_extensions"],
             })
         except Exception as error:
             logger.error("Failed to validate XLIFF: %s", error)

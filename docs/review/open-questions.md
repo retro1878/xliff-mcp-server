@@ -34,20 +34,34 @@ If a run is repeated over a file that already has `state="translated"` plus `sta
 
 **Default if unanswered:** do not reject it in Step 3 (rejecting would fail silently for every untagged file); report it as a tag mismatch in the Step 4 diff report.
 
-## Q6 — Should `validate_xliff` be strengthened?
+## Q6 — Should `validate_xliff` be strengthened? — **RESOLVED 2026-10-30**
 
-Today it answers "translate-toolkit can parse this". The task's acceptance criterion is "XML stays well-formed and passes validate_xliff", which as written is weaker than schema validity. Wiring in the OASIS XSD would break inputs that parse today (including any file with an SDLXLIFF `<mrk mid>` or a DOCTYPE).
+**Answer:** yes, but as a second, separate answer.
 
-**Default if unanswered:** leave `validate_xliff` semantics unchanged; add a separate structural check inside the test suite and the diff report, and say so in `tests.md`.
+`validate_xliff` keeps its original meaning: well-formed, parseable as XLIFF, correct unit count. It now also returns `schema_valid`, `schema_errors` and `ignored_extensions`, produced by `XliffProcessorService.schema_check()` against the OASIS XLIFF 1.2 strict schema (vendored at `xliff_mcp/schemas/xliff-core-1.2-strict.xsd`, shipped in the wheel).
 
-## Q7 — Multi-file XLIFF
+The schema check tolerates vendor extensions and says which ones it ignored:
 
-Ids are resolved document-wide, first match wins. Smartcat exports seen so far are single `<file>`. Supporting multi-file properly means scoping the regex to the enclosing `<file>` and reporting which file a unit belongs to.
+- elements and attributes in a foreign namespace (Smartcat's `sc:locked`, `sc:last-modified-date`, `sc:last-modified-user`, `sc:match-quality`);
+- attributes with no namespace that the schema does not declare (`x-state-qualifier`), determined from the schema itself rather than a hand-written list.
 
-**Default if unanswered:** not addressed in Steps 2–4; recorded as a known limitation in `findings.md` §5 and in the diff report's caveats.
+Everything the schema declares is still enforced: required attributes, element order, `state` enumerations, inline element nesting.
 
-## Q8 — `translate-toolkit` floor
+Measured: the supplied Smartcat export is `schema_valid: true` after ignoring 381 extension instances of five distinct names; a document with a missing `<source>` or `state="bogus"` is `schema_valid: false`.
 
-The safe-parser behaviour in `findings.md` §6 was observed on 3.20.1 only; `pyproject.toml` allows `>=3.0.0`. Raising the floor is a dependency change and the rules say no dependency changes without asking.
+## Q7 — Multi-file XLIFF and duplicate ids — **RESOLVED 2026-10-30**
 
-**Default if unanswered:** no change to `pyproject.toml`; the caveat is recorded.
+**Answer:** addressed.
+
+- `replace_xliff_targets` now resolves a translation by `segNumber` first (a document-wide position, 1-based, matching what `process_xliff` returns), then by `unitId`. A payload entry that carries both is matched by position when the id is ambiguous.
+- When several units share an id and the payload only has `unitId`, translations for that id are consumed in document order, one per occurrence. A single translation therefore fills one unit, not all of them.
+- `diff_report` now walks units in document order instead of collapsing them into a dict, so duplicates are compared position by position. It reports `kind: "ids"` with `duplicate unit id ...`, an id mismatch at a position, or units missing/extra on either side.
+
+Known limit: the report still cannot say which `<file>` a duplicate belongs to; it identifies units by id and position only.
+
+## Q8 — `translate-toolkit` floor — **RESOLVED 2026-10-30**
+
+**Answer:** `translate-toolkit>=3.20.1`.
+
+`get_safe_xml_parser` (the parser with `resolve_entities=False`, `no_network=True`) first appears in tag `3.19.4` — checked by fetching `translate/misc/xml_helpers.py` at tags 3.19.0 (absent), 3.19.1–3.19.3 (absent) and 3.19.4 (present). The floor is set to 3.20.1 because that is the only version the test suite has been executed against; 3.19.4–3.20.0 are believed safe but were not run here.
+

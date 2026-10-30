@@ -5,11 +5,22 @@ from typing import List, Tuple
 import html
 import logging
 import re
+import threading
+from collections import Counter
+from functools import lru_cache
+from importlib import resources
 from xml.sax.saxutils import escape
+
+from lxml import etree
 
 from .models import XliffData
 
 logger = logging.getLogger(__name__)
+
+XLIFF_NAMESPACE = "urn:oasis:names:tc:xliff:document:1.2"
+XML_NAMESPACE = "http://www.w3.org/XML/1998/namespace"
+XSD_NAMESPACE = "http://www.w3.org/2001/XMLSchema"
+SCHEMA_PATH = "schemas/xliff-core-1.2-strict.xsd"
 
 # One pass over the document; the unit id decides whether it is rewritten.
 UNIT_ELEMENT = re.compile(
@@ -142,7 +153,44 @@ class XliffProcessorService:
             return True, "XLIFF format is valid", unit_count
         except Exception as e:
             return False, f"Invalid XLIFF format: {str(e)}", 0
-    
+
+    @staticmethod
+    def schema_check(content: str) -> dict:
+        """Validate the XLIFF 1.2 core against the OASIS strict schema.
+
+        Vendor extensions are removed before validation and reported back:
+        elements and attributes in a foreign namespace, and attributes with no
+        namespace that the schema does not declare (Smartcat writes
+        `x-state-qualifier` that way). Everything the schema does declare --
+        element order, required attributes, `state` enumerations, inline
+        element nesting -- is checked.
+        """
+        parser = etree.XMLParser(resolve_entities=False, no_network=True)
+        try:
+            tree = etree.fromstring(content.encode("utf-8"), parser).getroottree()
+        except etree.XMLSyntaxError as error:
+            return {
+                "valid": False,
+                "errors": [str(error)],
+                "error_count": 1,
+                "ignored_extensions": [],
+            }
+
+        ignored = _strip_extensions(tree)
+        schema = _xliff_schema()
+        with _SCHEMA_LOCK:
+            valid = schema.validate(tree)
+            errors = [f"line {e.line}: {e.message}" for e in schema.error_log]
+
+        return {
+            "valid": valid,
+            "errors": errors[:20],
+            "error_count": len(errors),
+            "ignored_extensions": [
+                {"name": name, "count": count} for name, count in sorted(ignored.items())
+            ],
+        }
+
     @staticmethod
     def process_xliff_with_tags(file_name: str, content: str) -> List[XliffData]:
         """
@@ -295,25 +343,42 @@ class XliffProcessorService:
         Returns:
             (updated_content, replacement_count)
         """
-        wanted: dict[str, str] = {}
+        wanted_by_id: dict[str, list[str]] = {}
+        wanted_by_position: dict[int, str] = {}
         for translation in translations:
             new_text = translation.get('aiResult') or translation.get('mtResult')
             if not new_text:
                 continue
-            unit_id = translation.get('unitId') or str(translation['segNumber'])
-            wanted[unit_id] = new_text
+            unit_id = translation.get('unitId')
+            seg_number = translation.get('segNumber')
+            if unit_id:
+                wanted_by_id.setdefault(str(unit_id), []).append(new_text)
+            if seg_number is not None:
+                try:
+                    wanted_by_position[int(seg_number)] = new_text
+                except (TypeError, ValueError):
+                    pass
 
         replacements_count = 0
+        position = 0
 
         def rewrite(match: "re.Match[str]") -> str:
-            nonlocal replacements_count
+            nonlocal replacements_count, position
+            position += 1
             unit_start, unit_content, unit_end = match.groups()
-            unit_id = _unit_id(unit_start)
-            if unit_id is None or unit_id not in wanted:
+
+            # segNumber is a document-wide position, so it stays correct when the
+            # same unit id appears in more than one <file>.
+            text = wanted_by_position.get(position)
+            if text is None:
+                queued = wanted_by_id.get(_unit_id(unit_start) or "")
+                if queued:
+                    text = queued.pop(0)
+            if text is None:
                 return match.group(0)
 
             new_unit_content, changed = _fill_target(
-                unit_content, _render_fragment(wanted[unit_id])
+                unit_content, _render_fragment(text)
             )
             if not changed:
                 return match.group(0)
@@ -337,8 +402,8 @@ class XliffProcessorService:
             dict with original_unit_count, filled_unit_count, counts_match,
             changed_units (ids), issues (list of {unit_id, kind, detail}).
         """
-        original_units = _units_by_id(original)
-        filled_units = _units_by_id(filled)
+        original_units = _units_in_order(original)
+        filled_units = _units_in_order(filled)
         issues: list[dict] = []
 
         if len(original_units) != len(filled_units):
@@ -353,23 +418,52 @@ class XliffProcessorService:
                 }
             )
 
-        for unit_id in original_units:
-            if unit_id not in filled_units:
+        original_ids = [unit["id"] for unit in original_units]
+        filled_ids = [unit["id"] for unit in filled_units]
+        for duplicate_id, count in sorted(Counter(original_ids).items()):
+            if count > 1:
+                issues.append(
+                    {
+                        "unit_id": duplicate_id,
+                        "kind": "ids",
+                        "detail": f"duplicate unit id in original ({count} occurrences)",
+                    }
+                )
+
+        if len(original_units) == len(filled_units):
+            pairs = list(zip(original_units, filled_units))
+        else:
+            # Counts differ, so positions cannot be compared; fall back to ids.
+            filled_by_id = {unit["id"]: unit for unit in filled_units}
+            pairs = [
+                (unit, filled_by_id[unit["id"]])
+                for unit in original_units
+                if unit["id"] in filled_by_id
+            ]
+            for unit_id in sorted(set(original_ids) - set(filled_ids), key=str):
                 issues.append(
                     {"unit_id": unit_id, "kind": "ids", "detail": "unit missing from filled file"}
                 )
-        for unit_id in filled_units:
-            if unit_id not in original_units:
+            for unit_id in sorted(set(filled_ids) - set(original_ids), key=str):
                 issues.append(
                     {"unit_id": unit_id, "kind": "ids", "detail": "unit not present in original"}
                 )
 
         changed: list[str] = []
-        for unit_id, (before, after) in (
-            (uid, (original_units[uid], filled_units[uid]))
-            for uid in original_units
-            if uid in filled_units
-        ):
+        for before, after in pairs:
+            unit_id = after["id"] or before["id"] or ""
+            if before["id"] != after["id"]:
+                issues.append(
+                    {
+                        "unit_id": unit_id,
+                        "kind": "ids",
+                        "detail": (
+                            "unit id differs at this position: "
+                            f"{before['id']!r} -> {after['id']!r}"
+                        ),
+                    }
+                )
+                continue
             if before["start_tag"] != after["start_tag"]:
                 issues.append(
                     {
@@ -512,19 +606,19 @@ def _render_fragment(text: str) -> str:
 SOURCE_ELEMENT = re.compile(r"<source\b[^>]*>[\s\S]*?</source>", re.IGNORECASE)
 
 
-def _units_by_id(xml: str) -> dict[str, dict]:
-    """unit id -> {start_tag, content, source}. Duplicate ids: last wins."""
-    units: dict[str, dict] = {}
+def _units_in_order(xml: str) -> list[dict]:
+    """Every trans-unit in document order, including duplicate ids."""
+    units: list[dict] = []
     for match in UNIT_ELEMENT.finditer(xml):
-        unit_id = _unit_id(match.group(1))
-        if unit_id is None:
-            continue
         source = SOURCE_ELEMENT.search(match.group(2))
-        units[unit_id] = {
-            "start_tag": match.group(1),
-            "content": match.group(2),
-            "source": source.group(0) if source else "",
-        }
+        units.append(
+            {
+                "id": _unit_id(match.group(1)),
+                "start_tag": match.group(1),
+                "content": match.group(2),
+                "source": source.group(0) if source else "",
+            }
+        )
     return units
 
 
@@ -556,3 +650,56 @@ def _tag_skeleton(fragment: str) -> list[str]:
         id_match = re.search(r"""\bid\s*=\s*["']([^"']*)["']""", attrs)
         skeleton.append(f"{local}:{id_match.group(1) if id_match else ''}")
     return skeleton
+
+
+_SCHEMA_LOCK = threading.Lock()
+
+
+def _schema_bytes() -> bytes:
+    return resources.files(__package__).joinpath(SCHEMA_PATH).read_bytes()
+
+
+@lru_cache(maxsize=1)
+def _xliff_schema() -> etree.XMLSchema:
+    """The OASIS XLIFF 1.2 strict schema, compiled once."""
+    return etree.XMLSchema(etree.fromstring(_schema_bytes()))
+
+
+@lru_cache(maxsize=1)
+def _known_attributes() -> frozenset[str]:
+    """Attribute names the XLIFF 1.2 schema declares, so anything else can be
+    treated as a vendor extension."""
+    root = etree.fromstring(_schema_bytes())
+    return frozenset(
+        name
+        for element in root.iter(f"{{{XSD_NAMESPACE}}}attribute")
+        if (name := element.get("name"))
+    )
+
+
+def _strip_extensions(tree: etree._ElementTree) -> dict[str, int]:
+    """Remove vendor extensions from a parsed tree, in place.
+
+    Returns {"{namespace}name" or "name": occurrences} for what was removed.
+    """
+    ignored: dict[str, int] = {}
+    for element in list(tree.iter()):
+        if not isinstance(element.tag, str):
+            continue
+        if not element.tag.startswith(f"{{{XLIFF_NAMESPACE}}}"):
+            ignored[element.tag] = ignored.get(element.tag, 0) + 1
+            parent = element.getparent()
+            if parent is not None:
+                parent.remove(element)
+            continue
+        for name in list(element.attrib):
+            if name.startswith("{"):
+                if name.startswith(f"{{{XLIFF_NAMESPACE}}}") or name.startswith(
+                    f"{{{XML_NAMESPACE}}}"
+                ):
+                    continue
+            elif name in _known_attributes():
+                continue
+            ignored[name] = ignored.get(name, 0) + 1
+            del element.attrib[name]
+    return ignored

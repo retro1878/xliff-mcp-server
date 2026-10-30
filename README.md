@@ -97,7 +97,7 @@ Validate XLIFF content format.
 **Parameters:**
 - `content` (string): XLIFF file content to validate
 
-**Returns:** JSON with validation status, message, and unit count
+**Returns:** JSON with `valid` (well-formed and parseable as XLIFF), `message`, `unit_count`, and a schema answer from the OASIS XLIFF 1.2 strict schema: `schema_valid`, `schema_errors`, `ignored_extensions`. Vendor extensions (foreign-namespace elements/attributes, and undeclared no-namespace attributes such as Smartcat's `x-state-qualifier`) are removed before validation and listed in `ignored_extensions`.
 
 ### replace_xliff_targets
 Replace target translations in XLIFF file.

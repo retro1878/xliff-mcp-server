@@ -80,3 +80,14 @@ All four changes are in `xliff_mcp/xliff_processor.py`; `tests/test_fill_invaria
 - **Files changed**: `docs/review/tests.md` (owner's Smartcat import result), `docs/review/open-questions.md` (Q3 resolved, Q4 evidence).
 - **Reason**: the owner imported the filled file: 178 segments imported, 5 skipped as "Target text not changed" (the untouched TM segments), no errors.
 - **Server behaviour changed**: none.
+
+## Step 6 — Q6, Q7, Q8
+
+### 2026-10-30 — schema validation, duplicate ids, dependency floor
+
+- **Q6 — schema validation.** `xliff_mcp/xliff_processor.py`: added `schema_check()` plus `_xliff_schema`, `_known_attributes`, `_strip_extensions`, `_SCHEMA_LOCK`. Vendored `xliff_mcp/schemas/xliff-core-1.2-strict.xsd` (OASIS, copied unchanged). `tool_registry.validate_xliff` returns `schema_valid`, `schema_errors`, `ignored_extensions` alongside the existing fields. `valid` keeps its old meaning, so nothing that parsed before is rejected now.
+  - *Reason*: `validate_xliff` only answered "translate-toolkit can parse it" (Q6). The strict schema alone rejects every real Smartcat export because of `x-state-qualifier` and the `sc:` attributes, so validation runs on a copy with vendor extensions removed and reports them.
+- **Q7 — duplicate and multi-file ids.** `replace_xliff_targets` resolves by `segNumber` (document position) before `unitId`, and consumes duplicate-id translations in document order. `diff_report` compares units positionally instead of through a dict keyed by id, and reports duplicate ids, id mismatches and missing/extra units.
+- **Q8 — dependency floor.** `pyproject.toml`: `translate-toolkit>=3.0.0` → `>=3.20.1` (first release with the safe parser is 3.19.4; only 3.20.1 has been run here).
+- **Tests**: `tests/test_schema_validation.py` (7), `tests/test_multi_file.py` (6). Suite `61 passed`.
+- **Regression check**: re-filling the supplied Smartcat export after these changes produced a byte-identical file (md5 `580dc6f6…` before and after), and it is `schema_valid: true` with five ignored extension names.
