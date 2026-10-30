@@ -126,3 +126,12 @@ All four changes are in `xliff_mcp/xliff_processor.py`; `tests/test_fill_invaria
 - **What**: removed `out/` from the working tree (source export, filled file, segment dump and translation map).
 - **Why**: the owner imported the filled file into Smartcat and asked for the local copies to go; finding #11 is now fully closed.
 - **Server behaviour changed**: none.
+
+## Step 9 — tool descriptions
+
+### 2026-10-30 — make the tools self-describing
+
+- **Files changed**: `xliff_mcp/tool_registry.py` (one docstring per tool), `docs/review/changelog.md`.
+- **Why**: the MCP `tools/list` response carried names and schemas only, so a client had to guess which of the ten tools to call and when.
+- **How**: FastMCP turns each function's docstring into the tool description. Verified against a live `tools/list`: all ten now return text telling the model what the tool does and, for the two read paths, which one to use.
+- **Server behaviour changed**: no tool signature or output changed; `82 passed`.

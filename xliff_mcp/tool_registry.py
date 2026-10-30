@@ -78,6 +78,7 @@ def register_tools(
 
     @mcp.tool()
     def process_xliff(file_name: str, content: str, api_key: Optional[str] = None) -> str:
+        """List translation units as plain text (inline tags are removed). Use process_xliff_with_tags when the tags must survive translation."""
         auth_error = require_auth(api_key)
         if auth_error is not None:
             return auth_failure_response(auth_error["reason"], data=[])
@@ -99,6 +100,7 @@ def register_tools(
 
     @mcp.tool()
     def process_xliff_with_tags(file_name: str, content: str, api_key: Optional[str] = None) -> str:
+        """List translation units with their inline XLIFF tags intact. Start here before translating; send the same unitId back with replace_xliff_targets."""
         auth_error = require_auth(api_key)
         if auth_error is not None:
             return auth_failure_response(auth_error["reason"], data=[])
@@ -120,6 +122,7 @@ def register_tools(
 
     @mcp.tool()
     def validate_xliff(content: str, api_key: Optional[str] = None) -> str:
+        """Check that content is well-formed XLIFF, count its units, and report OASIS XLIFF 1.2 schema validity (vendor extensions are listed, not failed)."""
         auth_error = require_auth(api_key)
         if auth_error is not None:
             return auth_failure_response(auth_error["reason"], success_key="valid")
@@ -145,6 +148,7 @@ def register_tools(
 
     @mcp.tool()
     def replace_xliff_targets(content: str, translations: str, api_key: Optional[str] = None) -> str:
+        """Write translations into the target elements, set state=translated, escape text safely, and return the updated file plus a diff report. translations is a JSON array of {unitId or segNumber, aiResult or mtResult}."""
         auth_error = require_auth(api_key)
         if auth_error is not None:
             return auth_failure_response(auth_error["reason"], content=content)
@@ -180,6 +184,7 @@ def register_tools(
 
     @mcp.tool()
     def diff_xliff_report(original_content: str, filled_content: str, api_key: Optional[str] = None) -> str:
+        """Compare an original and a filled XLIFF file: which units changed, plus any difference in unit count, ids, source text, attributes, target state, inline tags or XML well-formedness."""
         auth_error = require_auth(api_key)
         if auth_error is not None:
             return auth_failure_response(auth_error["reason"])
@@ -203,6 +208,7 @@ def register_tools(
 
     @mcp.tool()
     def process_tmx(file_name: str, content: str, api_key: Optional[str] = None) -> str:
+        """List translation memory units from a TMX file, with languages and metadata."""
         auth_error = require_auth(api_key)
         if auth_error is not None:
             return auth_failure_response(auth_error["reason"], data=[])
@@ -224,6 +230,7 @@ def register_tools(
 
     @mcp.tool()
     def validate_tmx(content: str, api_key: Optional[str] = None) -> str:
+        """Check that content is well-formed TMX and return its unit count."""
         auth_error = require_auth(api_key)
         if auth_error is not None:
             return auth_failure_response(auth_error["reason"], success_key="valid")
@@ -251,6 +258,7 @@ def register_tools(
         preserve_tags: bool = False,
         api_key: Optional[str] = None,
     ) -> str:
+        """Export the unit list of an XLIFF file as CSV or JSON; preserve_tags keeps inline markup."""
         auth_error = require_auth(api_key)
         if auth_error is not None:
             return auth_failure_response(auth_error["reason"])
@@ -293,6 +301,7 @@ def register_tools(
         output_format: str = "csv",
         api_key: Optional[str] = None,
     ) -> str:
+        """Export the unit list of a TMX file as CSV or JSON."""
         auth_error = require_auth(api_key)
         if auth_error is not None:
             return auth_failure_response(auth_error["reason"])
@@ -325,6 +334,7 @@ def register_tools(
 
     @mcp.tool()
     def get_server_info(api_key: Optional[str] = None) -> str:
+        """List this server's tools, prompts, resources and version."""
         del api_key
         payload = {
             "server_name": "XLIFF MCP Server",
