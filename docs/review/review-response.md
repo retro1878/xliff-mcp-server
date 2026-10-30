@@ -1,6 +1,6 @@
 # Response to the independent review
 
-Review under discussion: `docs/review/review-findings.md` (Argon, 2026-10-30, against `db407ba` (now `9c8b9aa` after the history rewrite)).
+Review under discussion: `docs/review/review-findings.md` (Argon, 2026-10-30, against the commit now known as `9c8b9aa` after the history rewrite).
 Every finding was reproduced before being acted on; the reproduction output is in `tests.md` under Step 7. Fixes are in the commit that follows this file.
 
 ## Status at a glance (end of 2026-10-30)
@@ -16,7 +16,6 @@ All twelve findings are closed. No code finding is open; the remaining items are
 | Real export round trip | still byte-identical, md5 `580dc6f6ff35f495ae44fa33e751edfe` |
 | Deliberately unchanged | `auth.py` (rate-limit dictionary, unkeyed bypass, dead helpers), pre-existing unformatted files |
 | Known limits | state-only edits with unchanged text are not reported by `diff_report`; duplicate unit ids are identified by id and position only |
-
 
 | # | Finding | Verdict | Where |
 | --- | --- | --- | --- |
