@@ -135,3 +135,13 @@ All four changes are in `xliff_mcp/xliff_processor.py`; `tests/test_fill_invaria
 - **Why**: the MCP `tools/list` response carried names and schemas only, so a client had to guess which of the ten tools to call and when.
 - **How**: FastMCP turns each function's docstring into the tool description. Verified against a live `tools/list`: all ten now return text telling the model what the tool does and, for the two read paths, which one to use.
 - **Server behaviour changed**: no tool signature or output changed; `82 passed`.
+
+## Step 10 — tag enforcement on fill
+
+### 2026-10-30 — `require_tags`
+
+- **Files changed**: `xliff_mcp/xliff_processor.py` (`replace_xliff_targets(..., require_tags=True)` and `_tags_match_source`), `xliff_mcp/tool_registry.py` (parameter, `skipped_count`, message), `README.md`, `skills/replace_xliff_targets_from_translations.md`, tests.
+- **Why**: the fill wrote a translation even when it had lost an inline placeholder, leaving a Smartcat segment without its `<x/>`/`<g>` marker. The owner's requirement is that a filled target mirrors the source's tags.
+- **How**: before writing, the rendered target's tag skeleton is compared with the source's. On a mismatch the unit is left untouched (still `needs-translation`) and counted as skipped. `require_tags=False` restores the old behaviour.
+- **Not added, deliberately**: no alignment of free-form translated documents to segments, and no automatic re-insertion of tags into tagless translations. Both need language understanding; they stay with the agent, which already receives the source segments with their tags.
+- **Result**: `87 passed`.

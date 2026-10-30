@@ -147,8 +147,13 @@ def register_tools(
             })
 
     @mcp.tool()
-    def replace_xliff_targets(content: str, translations: str, api_key: Optional[str] = None) -> str:
-        """Write translations into the target elements, set state=translated, escape text safely, and return the updated file plus a diff report. translations is a JSON array of {unitId or segNumber, aiResult or mtResult}."""
+    def replace_xliff_targets(
+        content: str,
+        translations: str,
+        require_tags: bool = True,
+        api_key: Optional[str] = None,
+    ) -> str:
+        """Write translations into the target elements, set state=translated, escape text safely, and return the updated file plus a diff report. translations is a JSON array of {unitId or segNumber, aiResult or mtResult}. A translation whose inline tags do not match the source is skipped, not written."""
         auth_error = require_auth(api_key)
         if auth_error is not None:
             return auth_failure_response(auth_error["reason"], content=content)
@@ -158,12 +163,25 @@ def register_tools(
             if not isinstance(translations_data, list):
                 translations_data = [translations_data]
 
-            updated_content, replacements_count = xliff_service.replace_xliff_targets(content, translations_data)
+            updated_content, replacements_count = xliff_service.replace_xliff_targets(
+                content, translations_data, require_tags=require_tags
+            )
+            skipped_count = len(translations_data) - replacements_count
+            message = (
+                f"Successfully replaced {replacements_count} of "
+                f"{len(translations_data)} translations"
+            )
+            if skipped_count:
+                message += (
+                    f"; {skipped_count} skipped (no matching unit, or the inline "
+                    "tags differed from the source)"
+                )
             return _dump_json({
                 "success": True,
-                "message": f"Successfully replaced {replacements_count} translations",
+                "message": message,
                 "content": updated_content,
                 "replacements_count": replacements_count,
+                "skipped_count": skipped_count,
                 "diff_report": xliff_service.diff_report(content, updated_content),
             })
         except json.JSONDecodeError as error:

@@ -448,3 +448,16 @@ rm -rf out
 ```
 
 Nothing in the repository referenced them; `out/` remains in `.gitignore` so a future run cannot commit them.
+
+## Step 10 (2026-10-30) — tag enforcement
+
+```
+.venv/Scripts/python -m pytest -q      87 passed, 1 warning
+.venv/Scripts/ruff check .             All checks passed!
+```
+
+Five new tests: a tagless translation for a tagged segment is skipped (`count 0`, target still empty, `state="needs-translation"`), a translation missing one of two tags is skipped, `require_tags=False` writes it, an untagged source is unaffected, and the tool reports `skipped_count`.
+
+The existing suite covers the positive path: all 178 segments of the real export carry their tags, and the Smartcat fixture still fills 7/7 with no issues.
+
+Not run: no re-import into Smartcat after this change (the behaviour for tag-correct translations is unchanged — verified by the fixture test, not by import).

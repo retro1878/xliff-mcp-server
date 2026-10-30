@@ -367,3 +367,64 @@ def test_meta_dropped_unit_is_caught() -> None:
 
     with pytest.raises(AssertionError, match="unit count changed"):
         assert_output_invariants(original, broken, set(AR_FILL))
+
+
+# --------------------------------------------------------------------------- #
+# tag enforcement: the target must mirror the source's inline tags
+# --------------------------------------------------------------------------- #
+def test_tagless_translation_for_a_tagged_segment_is_skipped() -> None:
+    original = load(PLAIN_AR)
+
+    filled, count = fill(original, [{"unitId": "2", "aiResult": "صفحة من"}])
+
+    assert count == 0
+    unit = next(u for u in units(filled) if unit_id(u) == "2")
+    assert inner(unit, unit, "target") == ""
+    assert 'state="needs-translation"' in target_open(unit)
+
+
+def test_translation_missing_one_tag_is_skipped() -> None:
+    original = load(PLAIN_AR)
+
+    filled, count = fill(
+        original, [{"unitId": "2", "aiResult": 'صفحة <x id="1" /> من'}]
+    )
+
+    assert count == 0
+    assert (
+        inner(next(u for u in units(filled) if unit_id(u) == "2"), "", "target") == ""
+    )
+
+
+def test_require_tags_false_writes_the_translation_anyway() -> None:
+    original = load(PLAIN_AR)
+
+    filled, count = XliffProcessorService.replace_xliff_targets(
+        original, [{"unitId": "2", "aiResult": "صفحة من"}], require_tags=False
+    )
+
+    assert count == 1
+    unit = next(u for u in units(filled) if unit_id(u) == "2")
+    assert inner(unit, unit, "target") == "صفحة من"
+
+
+def test_untagged_source_is_unaffected_by_the_tag_rule() -> None:
+    original = load(PLAIN_AR)
+
+    _, count = fill(original, [{"unitId": "1", "aiResult": "المبلغ الإجمالي"}])
+
+    assert count == 1
+
+
+def test_tool_reports_the_skipped_count() -> None:
+    import json
+
+    from xliff_mcp.server import replace_xliff_targets as tool
+
+    result = json.loads(
+        tool(load(PLAIN_AR), json.dumps([{"unitId": "2", "aiResult": "صفحة من"}]))
+    )
+
+    assert result["replacements_count"] == 0
+    assert result["skipped_count"] == 1
+    assert "skipped" in result["message"]

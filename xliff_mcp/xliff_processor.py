@@ -367,7 +367,9 @@ class XliffProcessorService:
             return "", ""
     
     @staticmethod
-    def replace_xliff_targets(content: str, translations: List[dict]) -> Tuple[str, int]:
+    def replace_xliff_targets(
+        content: str, translations: List[dict], require_tags: bool = True
+    ) -> Tuple[str, int]:
         """
         Replace target content in XLIFF file using string replacement
 
@@ -377,6 +379,9 @@ class XliffProcessorService:
         Args:
             content: Original XLIFF file content
             translations: List of translation data with segNumber, aiResult, mtResult
+            require_tags: With the default True, a translation whose inline tags
+                do not match the source's is not written at all, so a placeholder
+                can never be lost silently. Pass False to write it anyway.
 
         Returns:
             (updated_content, replacement_count)
@@ -419,9 +424,11 @@ class XliffProcessorService:
             if text is None:
                 return match.group(0)
 
-            new_unit_content, changed = _fill_target(
-                unit_content, _render_fragment(text)
-            )
+            rendered = _render_fragment(text)
+            if require_tags and not _tags_match_source(unit_content, rendered):
+                return match.group(0)
+
+            new_unit_content, changed = _fill_target(unit_content, rendered)
             if not changed:
                 return match.group(0)
 
@@ -860,3 +867,13 @@ def _strip_extensions(tree: etree._ElementTree) -> dict[str, int]:
             ignored[name] = ignored.get(name, 0) + 1
             del element.attrib[name]
     return ignored
+
+
+def _tags_match_source(unit_content: str, rendered: str) -> bool:
+    """True when the rendered target carries the same inline tags as the source."""
+    source_match = SOURCE_ELEMENT.search(unit_content)
+    if source_match is None:
+        return True
+    element = source_match.group(0)
+    inner = element[element.index(">") + 1 : element.rindex("<")]
+    return _tag_skeleton(inner) == _tag_skeleton(rendered)

@@ -47,14 +47,14 @@ def test_validate_xliff_reports_invalid_payloads() -> None:
 
 def test_replace_xliff_targets_updates_matching_unit() -> None:
     translations = json.dumps([
-        {"unitId": "2", "aiResult": "这是一条更新后的消息。"},
+        {"unitId": "2", "aiResult": '这是一条 <g id="1">更新后</g> 的测试消息。'},
     ])
 
     result = json.loads(replace_xliff_targets(SAMPLE_XLIFF, translations))
 
     assert result["success"] is True
     assert result["replacements_count"] == 1
-    assert "这是一条更新后的消息。" in result["content"]
+    assert "这是一条 " in result["content"]
 
 
 def test_export_xliff_file_generates_csv_content() -> None:
