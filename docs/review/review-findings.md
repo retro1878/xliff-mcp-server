@@ -3,6 +3,8 @@
 Date: 2026-10-30
 Repository: `xliff-mcp-server` (`HEAD` at `db407ba`)
 
+> Note added 2026-10-30: history below this review was rewritten to remove customer identifiers. `db407ba` is now `9c8b9aa`; `9223d35` is now `fe2fc9f`.
+
 ## 1. Independent Verification of Tests, Linter, Formatter, and Recorded Claims
 
 All checks were executed directly against the repository using `.venv\Scripts\python.exe` (Python `3.14.7`, `translate-toolkit 3.20.1`, `lxml 6.1.3`, `mcp 1.28.1`):

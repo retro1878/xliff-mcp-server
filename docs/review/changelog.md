@@ -101,3 +101,10 @@ All four changes are in `xliff_mcp/xliff_processor.py`; `tests/test_fill_invaria
 - **Data scrub**: real company names, username, identifiers and the notary number were removed from committed `docs/review/tests.md` (finding #11). They remain in the pushed history; rewriting it needs the owner's decision.
 - **Not changed**: `xliff_mcp/auth.py` (unbounded rate-limit dict, unkeyed bypass, dead helpers) — upstream behaviour, out of scope for this task.
 - **Result**: `76 passed`, `ruff check` clean, and the real filled export is still byte-identical (`580dc6f6…`).
+
+### 2026-10-30 — history rewritten to remove customer identifiers
+
+- **What**: `git filter-branch` over `main` replaced every customer identifier in `docs/review/*.md` across all commits (company and officer names, username, UEN/FIN/NRIC values, notary number, receipt number, address). Then `main` was force-pushed.
+- **Why**: finding #11; the strings were removed from the working tree but remained in every commit from `896542b` onward.
+- **Result**: commit SHAs changed. `896542b`→`70743e3`, `9223d35`→`fe2fc9f`, `6f9aab2`→`2aae2b2`, `9f35b8b`→`202970e`, `1c9ebfc`→`2dda4f2`, `5f9e86d`→`428e5d3`, `db407ba`→`9c8b9aa`, `0a6b3e9`→`229ed3f`. The working tree at `HEAD` is unchanged (`git diff 0a6b3e9 HEAD` was empty).
+- **Backup**: a local-only branch `backup/pre-scrub` still points at the old history; it was never pushed. Delete it with `git branch -D backup/pre-scrub` once satisfied.

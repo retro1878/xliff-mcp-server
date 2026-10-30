@@ -1,6 +1,6 @@
 # Response to the independent review
 
-Review under discussion: `docs/review/review-findings.md` (Argon, 2026-10-30, against `db407ba`).
+Review under discussion: `docs/review/review-findings.md` (Argon, 2026-10-30, against `db407ba` (now `9c8b9aa` after the history rewrite)).
 Every finding was reproduced before being acted on; the reproduction output is in `tests.md` under Step 7. Fixes are in the commit that follows this file.
 
 | # | Finding | Verdict | Where |
@@ -36,7 +36,7 @@ Every finding was reproduced before being acted on; the reproduction output is i
    **Not fixed, by design:** a unit whose target text is byte-identical before and after is still skipped, so `changed_units` stays "units whose target text changed" and a state-only edit is not reported. That is the definition the tool has used since Step 4, and `replace_xliff_targets` always rewrites the text when it writes the state, so a real fill cannot hit it.
 9. **#9** Only unqualified attributes starting with `x-` are treated as extensions, plus genuine foreign-namespace elements and attributes. Everything else the schema does not know is left in place, so `<source stte="x">` fails validation. A non-XLIFF root is rejected. Tests: `test_attribute_typo_fails_the_schema`, `test_non_xliff_root_is_rejected`. The schema-derived `_known_attributes()` helper was deleted; it is no longer needed.
 10. **#10** `_languages_in_unit_order()` walks `<file>` blocks and returns the language pair of the file that encloses each unit. Test: `test_with_tags_reads_languages_from_the_enclosing_file`.
-11. **#11** The committed strings were scrubbed in this commit: the real names, username, identifiers and notary number are gone from `docs/review/tests.md`. The `out/` copies remain on disk because the owner asked for the filled file and it is gitignored. **The strings are still in the pushed git history** (commits `9223d35` and later); removing them from history requires a rewrite and force-push, which is the owner's decision.
+11. **#11** The committed strings were scrubbed in this commit: the real names, username, identifiers and notary number are gone from `docs/review/tests.md`. The `out/` copies remain on disk because the owner asked for the filled file and it is gitignored. **The strings are still in the pushed git history** (commits `9223d35` (now `fe2fc9f`) and later); removing them from history requires a rewrite and force-push, which is the owner's decision.
 12. **#12** `README.md` now says `translate-toolkit >= 3.20.1`. `RateLimiter`'s unbounded dict, the unkeyed-HTTP bypass, the missing payload size limit and the dead `SecurityHeaders`/`require_auth` code are upstream issues that predate this work; they are recorded here and left untouched, because changing the HTTP transport's behaviour was not part of this task.
 
 ## Corrections to our own documentation
