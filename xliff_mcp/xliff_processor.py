@@ -57,7 +57,9 @@ class XliffProcessorService:
             store.parse(content.encode('utf-8'))
             
             data = []
-            
+            languages = _languages_in_unit_order(content)
+            position = -1
+
             # Get file-level language attributes
             file_src_lang = ""
             file_tgt_lang = ""
@@ -75,7 +77,9 @@ class XliffProcessorService:
             for index, unit in enumerate(store.units):
                 if unit.isheader():
                     continue
-                
+
+                position += 1
+
                 unit_full_id = unit.getid()
                 if not unit_full_id:
                     continue
@@ -110,10 +114,15 @@ class XliffProcessorService:
                     src_lang = (element.get('source-language') or "").lower()
                     tgt_lang = (element.get('target-language') or "").lower()
                 
-                if not src_lang:
-                    src_lang = file_src_lang
-                if not tgt_lang:
-                    tgt_lang = file_tgt_lang
+                if not src_lang or not tgt_lang:
+                    if 0 <= position < len(languages):
+                        unit_src_lang, unit_tgt_lang = languages[position]
+                    else:
+                        unit_src_lang, unit_tgt_lang = file_src_lang, file_tgt_lang
+                    if not src_lang:
+                        src_lang = unit_src_lang
+                    if not tgt_lang:
+                        tgt_lang = unit_tgt_lang
                 
                 xliff_data = XliffData(
                     fileName=file_name,
@@ -322,6 +331,7 @@ class XliffProcessorService:
     def _extract_element_content(unit_content: str, element_name: str) -> str:
         """Extract an element's inner XML from one trans-unit body."""
         try:
+            unit_content, _ = _split_alt_trans(unit_content)
             element_pattern = rf'(<{element_name}[^>]*>)([\s\S]*?)</{element_name}>'
 
             element_match = re.search(element_pattern, unit_content, re.IGNORECASE)
@@ -333,7 +343,7 @@ class XliffProcessorService:
             if not XML_SPACE_PRESERVE.search(element_match.group(1)):
                 content = content.strip()
 
-            return html.unescape(content)
+            return _unescape_text_runs(content)
         except Exception as e:
             logger.error(f"Failed to extract {element_name} content: {str(e)}")
             return ""
@@ -610,9 +620,7 @@ def _with_translated_state(open_tag: str) -> str:
 def _fill_target(unit_content: str, rendered: str) -> Tuple[str, bool]:
     """Write rendered content into the unit's <target>; False if there is none."""
     # <alt-trans> carries its own <source>/<target>; never write into it.
-    parts = re.split(r"(?=<alt-trans\b)", unit_content, maxsplit=1, flags=re.IGNORECASE)
-    head = parts[0]
-    tail = parts[1] if len(parts) > 1 else ""
+    head, tail = _split_alt_trans(unit_content)
 
     match = TARGET_ELEMENT.search(head)
     if match:
@@ -654,6 +662,8 @@ def _render_fragment(text: str) -> str:
         if self_closing:
             candidate = f"<r>{match.group(0)}</r>"
         elif closing:
+            if not re.fullmatch(rf"</\s*{re.escape(name)}\s*>", match.group(0)):
+                continue
             candidate = f"<r><{name}></{name}></r>"
         else:
             candidate = f"<r>{match.group(0)}</{name}></r>"
@@ -687,6 +697,18 @@ def _render_fragment(text: str) -> str:
 
 
 SOURCE_ELEMENT = re.compile(r"<source\b[^>]*>[\s\S]*?</source>", re.IGNORECASE)
+
+
+def _split_alt_trans(unit_content: str) -> tuple[str, str]:
+    """Split a trans-unit body at <alt-trans>: (before, from alt-trans on)."""
+    parts = re.split(r"(?=<alt-trans\b)", unit_content, maxsplit=1, flags=re.IGNORECASE)
+    return (parts[0], parts[1]) if len(parts) > 1 else (unit_content, "")
+
+
+def _unescape_text_runs(fragment: str) -> str:
+    """html.unescape the text only; tag attributes keep their entities."""
+    parts = re.split(r"(<[^<>]*>)", fragment)
+    return "".join(part if part.startswith("<") else html.unescape(part) for part in parts)
 
 
 def _attribute_value(tag: str, name: str) -> str:
@@ -732,6 +754,7 @@ def _units_in_order(xml: str) -> list[dict]:
 
 
 def _target_parts(unit_content: str) -> dict | None:
+    unit_content, _ = _split_alt_trans(unit_content)
     match = TARGET_ELEMENT.search(unit_content)
     if not match:
         return None

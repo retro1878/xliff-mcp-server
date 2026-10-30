@@ -131,7 +131,9 @@ def test_tool_returns_the_report() -> None:
 
 
 def test_replace_response_includes_the_report() -> None:
-    result = json.loads(replace_xliff_targets(load(PLAIN_AR), json.dumps(payload(AR_FILL))))
+    result = json.loads(
+        replace_xliff_targets(load(PLAIN_AR), json.dumps(payload(AR_FILL)))
+    )
 
     assert result["success"] is True
     assert result["diff_report"]["issues"] == []

@@ -90,7 +90,9 @@ def test_diff_report_compares_duplicates_by_position() -> None:
 
     assert report["changed_units"] == ["1", "1"]
     assert {
-        issue["kind"] for issue in report["issues"] if "duplicate" not in issue["detail"]
+        issue["kind"]
+        for issue in report["issues"]
+        if "duplicate" not in issue["detail"]
     } == set()
 
 
@@ -99,8 +101,12 @@ def test_reordered_units_are_flagged() -> None:
 
     single_file = TWO_FILES.split("<file", 2)[1]
     single_file = "<file" + single_file
-    first_unit = re.search(r'<trans-unit id="1">.*?</trans-unit>', single_file, re.S).group(0)
-    second_unit = re.search(r'<trans-unit id="2">.*?</trans-unit>', single_file, re.S).group(0)
+    first_unit = re.search(
+        r'<trans-unit id="1">.*?</trans-unit>', single_file, re.S
+    ).group(0)
+    second_unit = re.search(
+        r'<trans-unit id="2">.*?</trans-unit>', single_file, re.S
+    ).group(0)
     swapped = (
         single_file.replace(first_unit, "@@1@@")
         .replace(second_unit, first_unit)
@@ -109,4 +115,6 @@ def test_reordered_units_are_flagged() -> None:
 
     report = XliffProcessorService.diff_report(single_file, swapped)
 
-    assert any("differs at this position" in issue["detail"] for issue in report["issues"])
+    assert any(
+        "differs at this position" in issue["detail"] for issue in report["issues"]
+    )

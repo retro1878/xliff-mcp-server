@@ -396,4 +396,45 @@ Real-file regression after the renderer rewrite:
 ### Not run
 
 - No test against an `<alt-trans>` that also contains inline tags.
-- No history rewrite; the leaked identifiers are still in commits `9223d35` onward.
+- ~~No history rewrite~~ — done after Step 7: `git filter-branch` and a force-push removed the identifiers from every commit (see the entry in `changelog.md`).
+
+## Step 8 (2026-10-30) — second review round
+
+Reproduced with `/tmp/verify_argon2.py` before the fixes:
+
+```
+#3 tag attribute   extracted: x <ph id="1" equiv-text="A & B"/> y      (unescaped inside the tag)
+                   target:    x &lt;ph id="1" equiv-text="A &amp; B"/&gt; y   (tag escaped away)
+#4 closing tag     rendered: <g id="1">hello</g id="1">   -> validate_xliff False
+#6a alt-trans only target: 'old'  -> diff_report reports "target attributes changed"
+#6b self-closing    target: '<alt-trans><source>s</source><target>old'
+#10 process_xliff  [(1,'ar'), (2,'ar'), (3,'ar')] for a file whose third unit is in a fa file
+```
+
+After:
+
+```
+#3 extracted/target: x <ph id="1" equiv-text="A &amp; B"/> y , valid True
+#4 rendered: &lt;g id="1"&gt;hello&lt;/g id="1"&gt; , valid True
+#6a target '' and diff_report issues []
+#6b target ''
+#10 [(1,'ar'), (2,'ar'), (3,'fa')]
+```
+
+### Commands and results
+
+```
+.venv/Scripts/python -m pytest -q              82 passed, 1 warning
+.venv/Scripts/ruff check .                     All checks passed!
+.venv/Scripts/ruff format --check tests/ xliff_mcp/
+    12 files would be reformatted, 12 files already formatted
+```
+
+The 12 unformatted files are pre-existing; the three new test files were formatted in this step. `xliff_mcp/xliff_processor.py` remains deliberately unformatted (see Step 3).
+
+Real-file regression: `md5 580dc6f6ff35f495ae44fa33e751edfe` — unchanged.
+
+### Not run
+
+- No test of `<alt-trans>` nested inside `<group>`.
+- No test of an inline tag whose attribute value contains a literal `>`.

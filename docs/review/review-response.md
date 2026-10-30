@@ -15,7 +15,7 @@ Every finding was reproduced before being acted on; the reproduction output is i
 | 8 | `diff_report` blind spots | Confirmed, fixed except one deliberate limit | `diff_report`, `_tag_skeleton` |
 | 9 | `schema_check` strips any unknown unqualified attribute | Confirmed, fixed | `_strip_extensions` |
 | 10 | Languages always come from the first `<file>` | Confirmed, fixed | `_languages_in_unit_order` |
-| 11 | Customer data in committed docs | Confirmed, scrubbed today; history still affected | `docs/review/tests.md` |
+| 11 | Customer data in committed docs | Confirmed, scrubbed, history rewritten | `docs/review/tests.md` |
 | 12 | README dependency line, auth dead code | README fixed; auth left untouched | `README.md` |
 
 ## What was done for each
@@ -52,3 +52,24 @@ Every finding was reproduced before being acted on; the reproduction output is i
 ```
 
 Re-filling the real export after the renderer rewrite produced the same byte-identical file (`md5 580dc6f6ff35f495ae44fa33e751edfe`), and `schema_check` still reports it valid. New tests: 16 in `tests/test_review_regressions.py`.
+
+## Round 2 — Argon's re-verification (`review-findings.md` §3)
+
+Four partial fixes were reported; all four were reproduced and fixed. Two are edge cases of the same code the first round touched, one is a read-path asymmetry, one a missed call site.
+
+| # | Argon's note | Verdict | Fix |
+| --- | --- | --- | --- |
+| 3 | Inline tag **attributes** containing `&amp;` are still destroyed on round trip | Confirmed, fixed | `_unescape_text_runs()` unescapes only text between tags; `<ph equiv-text="A &amp; B"/>` survives |
+| 4 | Closing tag with attributes (`</g id="1">`) written raw | Confirmed, fixed | `_render_fragment` requires a closing tag to match `</name>` exactly before keeping it |
+| 6 | `_extract_element_content` and `_target_parts` still read inside `<alt-trans>` | Confirmed, fixed | both now split at `<alt-trans` via `_split_alt_trans()`, as `_fill_target` already did |
+| 10 | `process_xliff` still uses the first `<file>`'s languages | Confirmed, fixed | it now uses `_languages_in_unit_order()` with a document position, like the tag path |
+| 11 | stale notes about the history rewrite; `out/` still on disk | Confirmed, corrected | notes updated; `out/` stays by the owner's choice |
+| 12 | new test files failed `ruff format --check` | Confirmed, fixed | the three new test files were formatted; the rest of the tree was already unformatted upstream |
+
+Tests added for these: `test_tag_attribute_entities_survive_round_trip`, `test_closing_tag_with_attributes_is_escaped`, `test_alt_trans_only_target_is_neither_read_nor_reported`, `test_self_closing_target_before_alt_trans_is_not_read_as_target`, `test_process_xliff_reads_languages_per_file`.
+
+```
+.venv/Scripts/python -m pytest -q     82 passed
+.venv/Scripts/ruff check .            All checks passed!
+md5 out/filled-en-ar.xliff            580dc6f6ff35f495ae44fa33e751edfe  (unchanged)
+```

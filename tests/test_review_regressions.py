@@ -79,7 +79,9 @@ def test_with_tags_reads_languages_from_the_enclosing_file() -> None:
 
 # 3 -------------------------------------------------------------------------
 def test_lt_round_trip_keeps_tags_and_escapes_the_less_than() -> None:
-    source = one_unit('<source>1 &lt; 2 <g id="1">text</g></source><target state="needs-translation"></target>')
+    source = one_unit(
+        '<source>1 &lt; 2 <g id="1">text</g></source><target state="needs-translation"></target>'
+    )
     extracted = XliffProcessorService.process_xliff_with_tags("x", source)[0].source
 
     filled, _ = XliffProcessorService.replace_xliff_targets(
@@ -92,7 +94,7 @@ def test_lt_round_trip_keeps_tags_and_escapes_the_less_than() -> None:
 
 # 4 -------------------------------------------------------------------------
 def test_unusable_tag_candidates_are_escaped_not_written_raw() -> None:
-    cases = ['</g/>', '<x id="1 & 2"/>', '<x bogus/>', '<ns:g>hi</ns:g>']
+    cases = ["</g/>", '<x id="1 & 2"/>', "<x bogus/>", "<ns:g>hi</ns:g>"]
     for candidate in cases:
         rendered = _render_fragment(candidate)
         document = one_unit(f"<source>s</source><target>{rendered}</target>")
@@ -105,7 +107,7 @@ def test_document_with_an_entity_reference_does_not_raise() -> None:
         '<?xml version="1.0"?><!DOCTYPE xliff [<!ENTITY xxe "x">]>'
         + XLIFF
         + '<file original="a" datatype="plaintext" source-language="en"><body>'
-        "<trans-unit id=\"1\"><source>&xxe;</source><target></target></trans-unit>"
+        '<trans-unit id="1"><source>&xxe;</source><target></target></trans-unit>'
         "</body></file></xliff>"
     )
 
@@ -120,7 +122,7 @@ def test_validate_tool_survives_the_same_document() -> None:
         '<?xml version="1.0"?><!DOCTYPE xliff [<!ENTITY xxe "x">]>'
         + XLIFF
         + '<file original="a" datatype="plaintext" source-language="en"><body>'
-        "<trans-unit id=\"1\"><source>&xxe;</source><target></target></trans-unit>"
+        '<trans-unit id="1"><source>&xxe;</source><target></target></trans-unit>'
         "</body></file></xliff>"
     )
 
@@ -132,7 +134,7 @@ def test_validate_tool_survives_the_same_document() -> None:
 # 6 -------------------------------------------------------------------------
 def test_alt_trans_target_is_never_touched() -> None:
     content = one_unit(
-        '<source>s</source><alt-trans><source>s</source><target>old</target></alt-trans>'
+        "<source>s</source><alt-trans><source>s</source><target>old</target></alt-trans>"
     )
 
     filled, _ = XliffProcessorService.replace_xliff_targets(
@@ -140,12 +142,16 @@ def test_alt_trans_target_is_never_touched() -> None:
     )
 
     assert targets_of(filled) == ["نص", "old"]
-    assert filled.index("<target state=\"translated\">نص</target>") < filled.index("<alt-trans>")
+    assert filled.index('<target state="translated">نص</target>') < filled.index(
+        "<alt-trans>"
+    )
 
 
 # 7 -------------------------------------------------------------------------
 def test_namespaced_state_attribute_is_not_rewritten() -> None:
-    content = one_unit('<source>s</source><target sc:state="locked" state="needs-translation"></target>')
+    content = one_unit(
+        '<source>s</source><target sc:state="locked" state="needs-translation"></target>'
+    )
 
     filled, _ = XliffProcessorService.replace_xliff_targets(
         content, [{"unitId": "1", "aiResult": "نص"}]
@@ -159,7 +165,9 @@ def test_namespaced_state_attribute_is_not_rewritten() -> None:
 # 8 -------------------------------------------------------------------------
 def test_diff_report_flags_malformed_output() -> None:
     original = one_unit('<source>s</source><target state="needs-translation"></target>')
-    broken = original.replace("<target state=\"needs-translation\"></target>", "<target>a & b</target>")
+    broken = original.replace(
+        '<target state="needs-translation"></target>', "<target>a & b</target>"
+    )
 
     report = XliffProcessorService.diff_report(original, broken)
 
@@ -167,7 +175,9 @@ def test_diff_report_flags_malformed_output() -> None:
 
 
 def test_diff_report_flags_changed_target_attributes() -> None:
-    original = one_unit('<source>s</source><target state="needs-translation" xml:space="preserve"></target>')
+    original = one_unit(
+        '<source>s</source><target state="needs-translation" xml:space="preserve"></target>'
+    )
     broken = original.replace(
         '<target state="needs-translation" xml:space="preserve">',
         '<target state="translated">',
@@ -179,7 +189,9 @@ def test_diff_report_flags_changed_target_attributes() -> None:
 
 
 def test_diff_report_flags_a_pair_turned_into_self_closing() -> None:
-    original = one_unit('<source><g id="1">x</g></source><target state="needs-translation"></target>')
+    original = one_unit(
+        '<source><g id="1">x</g></source><target state="needs-translation"></target>'
+    )
     filled = original.replace(
         '<target state="needs-translation"></target>',
         '<target state="translated"><g id="1" /></target>',
@@ -191,7 +203,9 @@ def test_diff_report_flags_a_pair_turned_into_self_closing() -> None:
 
 
 def test_diff_report_reports_a_dropped_duplicate_unit_by_id() -> None:
-    broken = re.sub(r"<trans-unit id=\"1\"><source>Gamma.*?</trans-unit>", "", TWO_FILES, flags=re.S)
+    broken = re.sub(
+        r"<trans-unit id=\"1\"><source>Gamma.*?</trans-unit>", "", TWO_FILES, flags=re.S
+    )
 
     report = XliffProcessorService.diff_report(TWO_FILES, broken)
 
@@ -216,7 +230,9 @@ def test_diff_report_flags_a_dropped_ctype() -> None:
 
 # 9 -------------------------------------------------------------------------
 def test_attribute_typo_fails_the_schema() -> None:
-    content = one_unit('<source stte="x">s</source><target state="needs-translation"></target>')
+    content = one_unit(
+        '<source stte="x">s</source><target state="needs-translation"></target>'
+    )
 
     report = XliffProcessorService.schema_check(content)
 
@@ -228,3 +244,67 @@ def test_non_xliff_root_is_rejected() -> None:
 
     assert report["valid"] is False
     assert "root element" in report["errors"][0]
+
+
+# Round 2 -------------------------------------------------------------------
+def test_tag_attribute_entities_survive_round_trip() -> None:
+    source = one_unit(
+        '<source>x <ph id="1" equiv-text="A &amp; B"/> y</source>'
+        '<target state="needs-translation"></target>'
+    )
+    extracted = XliffProcessorService.process_xliff_with_tags("x", source)[0].source
+
+    filled, _ = XliffProcessorService.replace_xliff_targets(
+        source, [{"unitId": "1", "aiResult": extracted}]
+    )
+
+    assert extracted == 'x <ph id="1" equiv-text="A &amp; B"/> y'
+    assert target_of(filled) == 'x <ph id="1" equiv-text="A &amp; B"/> y'
+
+
+def test_closing_tag_with_attributes_is_escaped() -> None:
+    rendered = _render_fragment('<g id="1">hello</g id="1">')
+    document = one_unit(f"<source>s</source><target>{rendered}</target>")
+
+    assert '<g id="1">' not in rendered
+    assert XliffProcessorService.validate_xliff(document)[0] is True
+
+
+def test_alt_trans_only_target_is_neither_read_nor_reported() -> None:
+    source = (
+        XLIFF
+        + '<file original="a" datatype="plaintext" source-language="en" target-language="ar">'
+        '<body><trans-unit id="1"><source>s</source><alt-trans><source>s</source>'
+        '<target state="translated" state-qualifier="fuzzy-match">old</target>'
+        "</alt-trans></trans-unit></body></file></xliff>"
+    )
+
+    assert XliffProcessorService.process_xliff_with_tags("x", source)[0].target == ""
+
+    filled, _ = XliffProcessorService.replace_xliff_targets(
+        source, [{"unitId": "1", "aiResult": "نص"}]
+    )
+    kinds = {
+        issue["kind"]
+        for issue in XliffProcessorService.diff_report(source, filled)["issues"]
+    }
+    assert "attributes" not in kinds
+
+
+def test_self_closing_target_before_alt_trans_is_not_read_as_target() -> None:
+    source = (
+        XLIFF
+        + '<file original="a" datatype="plaintext" source-language="en" target-language="ar">'
+        '<body><trans-unit id="1"><source>s</source>'
+        '<target state="needs-translation"/>'
+        "<alt-trans><source>s</source><target>old</target></alt-trans>"
+        "</trans-unit></body></file></xliff>"
+    )
+
+    assert XliffProcessorService.process_xliff_with_tags("x", source)[0].target == ""
+
+
+def test_process_xliff_reads_languages_per_file() -> None:
+    assert [
+        unit.tgtLang for unit in XliffProcessorService.process_xliff("x", TWO_FILES)
+    ] == ["ar", "ar", "fa"]

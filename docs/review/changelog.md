@@ -107,4 +107,16 @@ All four changes are in `xliff_mcp/xliff_processor.py`; `tests/test_fill_invaria
 - **What**: `git filter-branch` over `main` replaced every customer identifier in `docs/review/*.md` across all commits (company and officer names, username, UEN/FIN/NRIC values, notary number, receipt number, address). Then `main` was force-pushed.
 - **Why**: finding #11; the strings were removed from the working tree but remained in every commit from `896542b` onward.
 - **Result**: commit SHAs changed. `896542b`→`70743e3`, `9223d35`→`fe2fc9f`, `6f9aab2`→`2aae2b2`, `9f35b8b`→`202970e`, `1c9ebfc`→`2dda4f2`, `5f9e86d`→`428e5d3`, `db407ba`→`9c8b9aa`, `0a6b3e9`→`229ed3f`. The working tree at `HEAD` is unchanged (`git diff 0a6b3e9 HEAD` was empty).
-- **Backup**: a local-only branch `backup/pre-scrub` still points at the old history; it was never pushed. Delete it with `git branch -D backup/pre-scrub` once satisfied.
+- **Backup**: a local-only branch `backup/pre-scrub` held the old history and was deleted on the owner's instruction; `git gc --prune=now` followed.
+
+## Step 8 — second review round
+
+### 2026-10-30 — four partial fixes completed
+
+- **#3**: `_extract_element_content` unescapes text runs only (`_unescape_text_runs`), so entities inside inline tag attributes are preserved.
+- **#4**: `_render_fragment` only accepts a closing tag that is exactly `</name>`.
+- **#6**: `_split_alt_trans` is now used by `_extract_element_content` and `_target_parts` as well as `_fill_target`, so `<alt-trans>` content is never read as the unit's own source or target.
+- **#10**: `process_xliff` resolves languages per `<file>` (`_languages_in_unit_order` + position), matching `process_xliff_with_tags`.
+- **#12**: `tests/test_review_regressions.py`, `tests/test_diff_report.py`, `tests/test_multi_file.py` run through `ruff format`.
+- **Docs**: stale statements about the un-rewritten history corrected.
+- **Result**: `82 passed`; real export still byte-identical (`580dc6f6…`).
