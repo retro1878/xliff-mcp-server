@@ -120,3 +120,9 @@ All four changes are in `xliff_mcp/xliff_processor.py`; `tests/test_fill_invaria
 - **#12**: `tests/test_review_regressions.py`, `tests/test_diff_report.py`, `tests/test_multi_file.py` run through `ruff format`.
 - **Docs**: stale statements about the un-rewritten history corrected.
 - **Result**: `82 passed`; real export still byte-identical (`580dc6f6…`).
+
+### 2026-10-30 — `out/` deleted
+
+- **What**: removed `out/` from the working tree (source export, filled file, segment dump and translation map).
+- **Why**: the owner imported the filled file into Smartcat and asked for the local copies to go; finding #11 is now fully closed.
+- **Server behaviour changed**: none.

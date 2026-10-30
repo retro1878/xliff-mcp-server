@@ -438,3 +438,13 @@ Real-file regression: `md5 580dc6f6ff35f495ae44fa33e751edfe` — unchanged.
 
 - No test of `<alt-trans>` nested inside `<group>`.
 - No test of an inline tag whose attribute value contains a literal `>`.
+
+### 2026-10-30 — `out/` deleted
+
+The working copies used for the fill run and the Smartcat import were removed at the owner's request:
+
+```
+rm -rf out
+```
+
+Nothing in the repository referenced them; `out/` remains in `.gitignore` so a future run cannot commit them.

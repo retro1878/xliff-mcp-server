@@ -3,6 +3,21 @@
 Review under discussion: `docs/review/review-findings.md` (Argon, 2026-10-30, against `db407ba` (now `9c8b9aa` after the history rewrite)).
 Every finding was reproduced before being acted on; the reproduction output is in `tests.md` under Step 7. Fixes are in the commit that follows this file.
 
+## Status at a glance (end of 2026-10-30)
+
+All twelve findings are closed. No code finding is open; the remaining items are upstream behaviour that was deliberately left alone.
+
+| Area | State |
+| --- | --- |
+| Findings 1–10, 12 | Fixed, each with a named test in `tests/` |
+| Finding 11 | Docs scrubbed, history rewritten and force-pushed, `out/` deleted |
+| Test suite | `82 passed` (`.venv/Scripts/python -m pytest -q`) |
+| Linter | `ruff check .` — all checks passed |
+| Real export round trip | still byte-identical, md5 `580dc6f6ff35f495ae44fa33e751edfe` |
+| Deliberately unchanged | `auth.py` (rate-limit dictionary, unkeyed bypass, dead helpers), pre-existing unformatted files |
+| Known limits | state-only edits with unchanged text are not reported by `diff_report`; duplicate unit ids are identified by id and position only |
+
+
 | # | Finding | Verdict | Where |
 | --- | --- | --- | --- |
 | 1 | Entry with both `segNumber` and `unitId` fills two units | Confirmed, fixed | `replace_xliff_targets` |
@@ -15,7 +30,7 @@ Every finding was reproduced before being acted on; the reproduction output is i
 | 8 | `diff_report` blind spots | Confirmed, fixed except one deliberate limit | `diff_report`, `_tag_skeleton` |
 | 9 | `schema_check` strips any unknown unqualified attribute | Confirmed, fixed | `_strip_extensions` |
 | 10 | Languages always come from the first `<file>` | Confirmed, fixed | `_languages_in_unit_order` |
-| 11 | Customer data in committed docs | Confirmed, scrubbed, history rewritten | `docs/review/tests.md` |
+| 11 | Customer data in committed docs | Confirmed, scrubbed, history rewritten, `out/` deleted | `docs/review/tests.md` |
 | 12 | README dependency line, auth dead code | README fixed; auth left untouched | `README.md` |
 
 ## What was done for each
@@ -63,7 +78,7 @@ Four partial fixes were reported; all four were reproduced and fixed. Two are ed
 | 4 | Closing tag with attributes (`</g id="1">`) written raw | Confirmed, fixed | `_render_fragment` requires a closing tag to match `</name>` exactly before keeping it |
 | 6 | `_extract_element_content` and `_target_parts` still read inside `<alt-trans>` | Confirmed, fixed | both now split at `<alt-trans` via `_split_alt_trans()`, as `_fill_target` already did |
 | 10 | `process_xliff` still uses the first `<file>`'s languages | Confirmed, fixed | it now uses `_languages_in_unit_order()` with a document position, like the tag path |
-| 11 | stale notes about the history rewrite; `out/` still on disk | Confirmed, corrected | notes updated; `out/` stays by the owner's choice |
+| 11 | stale notes about the history rewrite; `out/` still on disk | Confirmed, corrected | notes updated; `out/` deleted |
 | 12 | new test files failed `ruff format --check` | Confirmed, fixed | the three new test files were formatted; the rest of the tree was already unformatted upstream |
 
 Tests added for these: `test_tag_attribute_entities_survive_round_trip`, `test_closing_tag_with_attributes_is_escaped`, `test_alt_trans_only_target_is_neither_read_nor_reported`, `test_self_closing_target_before_alt_trans_is_not_read_as_target`, `test_process_xliff_reads_languages_per_file`.
