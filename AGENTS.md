@@ -1,5 +1,8 @@
 # XLIFF MCP Server
 
+## Review trail
+- Start in `docs/review/`: `findings.md` (fixtures, code behaviour, risks), `changelog.md` (every change and why), `tests.md` (commands run and their output), `open-questions.md` (decisions the owner still owes). Read those before changing fill/replace behaviour.
+
 ## Repository purpose
 - Python MCP server for parsing, validating, exporting, and rewriting XLIFF/TMX content, with a separate agent-readable `skills/` module.
 
